@@ -158,14 +158,9 @@ def classify_change(change) -> ChangeClass:
     if action == "DELETE" and b.get("denied"):
         return ChangeClass.RemovedProtection
 
-    # DELETE with logging in before → RemovedProtection
-    if action == "DELETE" and b.get("logConfig", {}).get("enable", True) is False:
+    # DELETE of rule with logging enabled removed (the protection was the logging)
+    if action == "DELETE" and b.get("logConfig", {}).get("enable") is True:
         return ChangeClass.RemovedProtection
-
-    # General DELETE of a deny rule (denied key exists)
-    if action == "DELETE":
-        # check if it was a deny rule via denied field
-        return ChangeClass.RemovedProtection  # any DELETE of a firewall = removed protection
 
     # BroadenedAccess: source ranges widened to world
     after_ranges = a.get("sourceRanges", [])
