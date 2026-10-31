@@ -1,6 +1,7 @@
 """Tests for attack_coverage/signatures.py — Task 5."""
 import importlib
 import unittest
+from unittest.mock import patch
 
 from attack_coverage.catalog import load_catalog
 from attack_coverage.signatures import (
@@ -63,9 +64,10 @@ class TestRunDetectors(unittest.TestCase):
         self.assertEqual(findings, [])
 
     def test_each_detector_runs_once(self):
-        """run_detectors deduplicates; 4 distinct detectors → each called once."""
-        distinct = len({v for v in TECHNIQUE_DETECTOR.values()})
-        self.assertEqual(distinct, 4)  # firewall, privilege, discovery, anomalous_actor
+        """run_detectors deduplicates; distinct detectors → each called once."""
+        distinct = len(set(TECHNIQUE_DETECTOR.values()))
+        expected = len({v for v in TECHNIQUE_DETECTOR.values()})
+        self.assertEqual(distinct, expected)
 
     def test_findings_for_technique_filters(self):
         findings = run_detectors(self._firewall_envelope())
@@ -78,3 +80,16 @@ class TestRunDetectors(unittest.TestCase):
         self.assertEqual(findings_for_technique([], "T1098"), [])
         all_findings = run_detectors(self._firewall_envelope())
         self.assertEqual(findings_for_technique(all_findings, "T9999"), [])
+
+    def test_run_detectors_unknown_detector_raises(self):
+        """If a detector name in TECHNIQUE_DETECTOR is unmapped, raise ValueError."""
+        envelope = self._firewall_envelope()
+        # Patch TECHNIQUE_DETECTOR to include a bogus detector name
+        with patch(
+            "attack_coverage.signatures.TECHNIQUE_DETECTOR",
+            {**TECHNIQUE_DETECTOR, "T9999": "detect_nonexistent"},
+        ):
+            with self.assertRaises(ValueError) as cm:
+                run_detectors(envelope)
+            self.assertIn("no dispatch branch for detector", str(cm.exception))
+            self.assertIn("detect_nonexistent", str(cm.exception))

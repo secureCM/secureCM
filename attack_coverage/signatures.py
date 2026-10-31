@@ -50,8 +50,10 @@ def run_detectors(envelope: dict) -> list[Finding]:
         if name in seen:
             continue
         seen.add(name)
+        if name not in _DETECTORS:
+            raise ValueError(f"run_detectors: no dispatch branch for detector {name!r}")
         fn = _DETECTORS[name]
-        if name in ("detect_firewall_exposure",):
+        if name == "detect_firewall_exposure":
             results.extend(fn(rules, changes))
         elif name == "detect_privilege_grant":
             results.extend(fn(iam, changes))
