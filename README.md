@@ -66,23 +66,29 @@ Fields: `resource`, `resource_type`, `action` (`CREATE`/`UPDATE`/`DELETE`), `bef
 ```
 score_rule_exposure(rule) -> ExposureScore
 ```
-Scores a firewall rule on: open-to-world source ranges (+40), all ports (+20), logging disabled (+10), priority < 1000 (+10), broad protocol (+20). Returns `ExposureScore(score, flags)`.
+ExposureScore: `score` (int), `flags` (list[str]).
+
+Scores a firewall rule on: open-to-world source ranges (+40), all ports (+20), logging disabled (+10), priority < 1000 (+10), broad protocol (+20).
 
 ```
 score_iam_binding(binding, *, high_privilege_roles=None, toxic_combinations=None) -> RiskScore
 ```
-Returns `RiskScore(is_high_privilege, service_account_member, toxic_combination)`. Defaults: `HIGH_PRIVILEGE_ROLES` = `{roles/owner, roles/editor, roles/iam.securityAdmin, roles/iam.serviceAccountTokenCreator, roles/iam.serviceAccountKeyAdmin}`; `TOXIC_COMBINATIONS` = `{roles/iam.serviceAccountTokenCreator, roles/iam.serviceAccountKeyAdmin, roles/iam.securityAdmin}`. Pass keyword args to override.
+RiskScore: `is_high_privilege` (bool), `service_account_member` (bool), `toxic_combination` (bool).
+
+Defaults: `HIGH_PRIVILEGE_ROLES` = `{roles/owner, roles/editor, roles/iam.securityAdmin, roles/iam.serviceAccountTokenCreator, roles/iam.serviceAccountKeyAdmin}`; `TOXIC_COMBINATIONS` = `{roles/iam.serviceAccountTokenCreator, roles/iam.serviceAccountKeyAdmin, roles/iam.securityAdmin}`. Pass keyword args to override.
 
 ```
 classify_change(change) -> ChangeClass
 ```
-Returns one of: `BroadenedAccess`, `RemovedProtection`, `ShadowCreated`, `LeastPrivilegeImproved`, `Neutral`, `Other`.
+Returns one of: `BroadenedAccess`, `RemovedProtection`, `ShadowCreated`, `LeastPrivilegeImproved`, `Neutral`, `Other`. `ChangeClass` is importable for comparisons: `from gcp_policy_analyzer import ChangeClass`.
 
 ### Prioritize
 
 ```
 prioritize_changes(changes: list[Change], context=None) -> list[PrioritizedChange]
 ```
+PrioritizedChange: `rank` (int), `change` (Change), `change_class` (ChangeClass), `blast_radius` (BlastRadius). BlastRadius: `affected_resources` (int), `external_exposure` (bool), `production` (bool), `score` (int).
+
 Filters out `Neutral`/`Other`, computes blast radius, sorts by `(blast_radius.score DESC, risk_delta DESC, timestamp DESC)`, assigns sequential `rank` values.
 
 ```
