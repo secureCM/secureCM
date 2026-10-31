@@ -89,12 +89,13 @@ def detect_firewall_exposure(rules: list, changes: list) -> list[Finding]:  # no
                 ))
                 continue
 
-        # --- T1562.007: broad ports added to world-open rule ---
+        # --- T1562.007: broad ports added to world-open ALLOW rule ---
+        # ponytail: scan allowed[] only — adding ports to denied[] blocks more, not less; not exposure
         after_ranges = after.get("sourceRanges", [])
-        after_allowed = after.get("allowed", []) + after.get("denied", [])
+        after_allowed = after.get("allowed", [])
         if _has_world(after_ranges) and _broad_ports(after_allowed):
             before_ranges = before.get("sourceRanges", [])
-            before_allowed = before.get("allowed", []) + before.get("denied", [])
+            before_allowed = before.get("allowed", [])
             # Only flag if this is new (wasn't already world+broad before)
             if not (_has_world(before_ranges) and _broad_ports(before_allowed)):
                 findings.append(Finding(
@@ -110,6 +111,8 @@ def detect_firewall_exposure(rules: list, changes: list) -> list[Finding]:  # no
                 continue
 
         # --- T1562.007: RemovedProtection (DELETE or disable of deny rule, or priority raised) ---
+        # Precedence: deny-delete → T1562.007 ONLY (defense evasion); `continue` prevents T1485 fallthrough.
+        # A DELETE of a non-deny resource falls through to T1485 below (RemovedProtection not returned for those).
         if cc == ChangeClass.RemovedProtection:
             findings.append(Finding(
                 technique_id="T1562.007",

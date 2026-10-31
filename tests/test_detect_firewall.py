@@ -46,7 +46,7 @@ class TestDetectFirewallExposure(unittest.TestCase):
         self.assertEqual(findings[0].severity, "critical")
 
     def test_deny_delete_flags(self):
-        """DELETE of a deny rule → Finding T1562.007 (defense evasion)."""
+        """DELETE of a deny rule → exactly one Finding T1562.007 (defense evasion); NOT also T1485."""
         from gcp_policy_analyzer.detect import detect_firewall_exposure
         change = _change(
             "DELETE",
@@ -56,6 +56,9 @@ class TestDetectFirewallExposure(unittest.TestCase):
         findings = detect_firewall_exposure([], [change])
         self.assertEqual(len(findings), 1)
         self.assertEqual(findings[0].technique_id, "T1562.007")
+        # Precedence: deny-delete is defense evasion only; T1485 must NOT be emitted
+        t1485 = [f for f in findings if f.technique_id == "T1485"]
+        self.assertEqual(t1485, [], "deny-rule delete must not emit T1485")
 
     def test_priority_shadow_flags(self):
         """Deny rule priority raised (100 → 9000) so an allow can shadow it → T1562.007."""
@@ -92,6 +95,17 @@ class TestDetectFirewallExposure(unittest.TestCase):
         findings = detect_firewall_exposure([], [change])
         t1485 = [f for f in findings if f.technique_id == "T1485"]
         self.assertEqual(len(t1485), 1)
+
+    def test_port_added_to_denied_not_flagged(self):
+        """Adding an admin port to a denied[] entry on a world-open rule is NOT exposure (blocks more)."""
+        from gcp_policy_analyzer.detect import detect_firewall_exposure
+        change = _change(
+            "UPDATE",
+            {"denied": [{"IPProtocol": "tcp", "ports": ["80"]}], "sourceRanges": ["0.0.0.0/0"]},
+            {"denied": [{"IPProtocol": "tcp", "ports": ["80", "22"]}], "sourceRanges": ["0.0.0.0/0"]},
+        )
+        findings = detect_firewall_exposure([], [change])
+        self.assertEqual(findings, [], "adding ports to denied[] must not produce a finding")
 
     def test_empty_envelope_returns_empty(self):
         """detect_firewall_exposure([], []) must return []."""
