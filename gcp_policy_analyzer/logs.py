@@ -121,3 +121,92 @@ def correlate_changes_with_logs(
         })
 
     return result
+
+
+def correlate_by_actor(
+    changes: list[Change],
+    entries: list[dict],
+    *,
+    anomaly_threshold: float = 0.25,
+    min_events_for_anomaly: int = 3,
+) -> dict:
+    """
+    Group all activity by principal and surface cross-source correlation signals
+    that are hard to spot by eye: caller IPs shared across different actors, and
+    caller IPs that are a minority (anomalous) for a given actor.
+
+    This is the needle-finder for multi-step incidents: an external identity and
+    a service account that share one caller IP are very likely one operation, even
+    when their events are days apart and buried in thousands of routine entries.
+
+    Args:
+        changes: list of Change objects (contributes change_count per principal)
+        entries: list of log entry dicts (principalEmail, callerIp, methodName, timestamp)
+        anomaly_threshold: an IP is anomalous for an actor if it accounts for at most
+            this fraction of that actor's log events (default 0.25)
+        min_events_for_anomaly: only flag anomalous IPs for actors with at least this
+            many log events (avoids noise on actors seen once or twice; default 3)
+
+    Returns:
+        {
+          "actors": [  # sorted by (len(anomalous_ips), log_count+change_count) desc
+            {"actor", "change_count", "log_count", "ips": {ip: count},
+             "anomalous_ips": [ip, ...], "methods": [method, ...]},
+            ...
+          ],
+          "shared_ips": {ip: [actor, ...]},  # only IPs seen for >1 distinct actor
+        }
+    """
+    change_counts: dict[str, int] = {}
+    for change in changes:
+        p = change.principal or ""
+        if p:
+            change_counts[p] = change_counts.get(p, 0) + 1
+
+    ip_counts: dict[str, dict[str, int]] = {}   # actor -> {ip: count}
+    methods: dict[str, set] = {}
+    ip_actors: dict[str, set] = {}              # ip -> {actors}
+    log_counts: dict[str, int] = {}
+
+    for entry in entries:
+        actor = entry.get("principalEmail", "")
+        if not actor:
+            continue
+        log_counts[actor] = log_counts.get(actor, 0) + 1
+        ip = entry.get("callerIp")
+        if ip:
+            ip_counts.setdefault(actor, {})[ip] = ip_counts.setdefault(actor, {}).get(ip, 0) + 1
+            ip_actors.setdefault(ip, set()).add(actor)
+        method = entry.get("methodName")
+        if method:
+            methods.setdefault(actor, set()).add(method)
+
+    all_actors = set(change_counts) | set(log_counts)
+    actors = []
+    for actor in all_actors:
+        ips = ip_counts.get(actor, {})
+        total = sum(ips.values())
+        anomalous = []
+        if total >= min_events_for_anomaly:
+            anomalous = sorted(
+                ip for ip, n in ips.items() if n / total <= anomaly_threshold
+            )
+        actors.append({
+            "actor": actor,
+            "change_count": change_counts.get(actor, 0),
+            "log_count": log_counts.get(actor, 0),
+            "ips": dict(ips),
+            "anomalous_ips": anomalous,
+            "methods": sorted(methods.get(actor, set())),
+        })
+
+    actors.sort(
+        key=lambda a: (len(a["anomalous_ips"]), a["log_count"] + a["change_count"]),
+        reverse=True,
+    )
+
+    shared_ips = {
+        ip: sorted(acts) for ip, acts in ip_actors.items() if len(acts) > 1
+    }
+
+    return {"actors": actors, "shared_ips": shared_ips}

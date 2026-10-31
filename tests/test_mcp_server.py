@@ -37,6 +37,10 @@ class TestMcpServer(unittest.TestCase):
         self.assertIn("analyze(", text)
         self.assertIn("redact_sensitive(", text)
         self.assertIn("fetch → load → classify/score → blast radius → sort → redact", text)
+        # enriched preamble: worked example, redaction-join guidance, and the needle-finder
+        self.assertIn("WORKED EXAMPLE", text)
+        self.assertIn("JOIN ON THE MASKED STRING", text)
+        self.assertIn("correlate_by_actor(", text)
 
     def test_run_script_tool_executes(self):
         resp = self.handle({

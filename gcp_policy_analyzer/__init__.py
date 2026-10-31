@@ -20,7 +20,7 @@ from gcp_policy_analyzer.prioritize import (
     prioritize_changes,
     compute_blast_radius,
 )
-from gcp_policy_analyzer.logs import filter_log_entries, correlate_changes_with_logs
+from gcp_policy_analyzer.logs import filter_log_entries, correlate_changes_with_logs, correlate_by_actor
 from gcp_policy_analyzer.redact import redact_sensitive, register_redactor
 from gcp_policy_analyzer.helpers import is_production, is_service_account, format_report
 from gcp_policy_analyzer.fetch import fetch_export, fetch_all, BrokerError
@@ -44,6 +44,7 @@ __all__ = [
     "compute_blast_radius",
     "filter_log_entries",
     "correlate_changes_with_logs",
+    "correlate_by_actor",
     "redact_sensitive",
     "register_redactor",
     "is_production",

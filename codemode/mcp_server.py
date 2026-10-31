@@ -15,6 +15,55 @@ from codemode import run_script
 
 _PATTERN = "fetch → load → classify/score → blast radius → sort → redact"
 
+_PREAMBLE = """\
+gcp_policy_analyzer — compose these helpers in a run_script to analyze GCP security data.
+
+REDACTION CONTRACT (read before correlating across turns or data sources):
+  Output you get back is redacted. Service-account emails are masked to a STABLE
+  form, e.g. ci-runner-07@…  →  sa-a1447b@… . The mask is deterministic: the SAME
+  service account always yields the SAME sa-xxxxxx@ string, in IAM bindings, in log
+  principalEmail, and in change.principal alike. So JOIN ON THE MASKED STRING
+  directly — treat it as the entity id. Do NOT try to reverse it. Human and external
+  emails (not *.iam.gserviceaccount.com) and caller IPs are NOT masked.
+
+FINDING MULTI-STEP INCIDENTS (needle in a haystack):
+  A single operation often spans several principals, days, and data types. The join
+  signal is usually a shared caller IP. correlate_by_actor(changes, log_entries)
+  groups activity per principal and returns shared_ips (IPs used by >1 actor) and
+  per-actor anomalous_ips — an external identity and a service account sharing one IP
+  are almost certainly one actor. Always inspect log_entries' callerIp; it is present.
+
+WORKED EXAMPLE (complex question, end to end):
+  import json
+  from datetime import datetime, timedelta, timezone
+  from gcp_policy_analyzer import (
+      load_audit_changes, load_iam_policies, classify_change, ChangeClass,
+      score_iam_binding, is_service_account, compute_blast_radius,
+      prioritize_changes, correlate_by_actor, redact_sensitive,
+  )
+  data = json.load(open("/path/to/export.json"))
+  now = datetime(2026, 11, 14, tzinfo=timezone.utc)          # anchor; not the real clock
+  changes = load_audit_changes(data, start=now - timedelta(days=14), end=now)
+
+  # 1. rank risky changes by blast radius (pass the full envelope as context)
+  ranked = prioritize_changes(changes, context=data)
+
+  # 2. identity risk: external grantors, high-priv / toxic grants
+  for p in load_iam_policies(data):
+      for b in p.bindings:
+          r = score_iam_binding(b)
+          if r.is_high_privilege or r.toxic_combination:
+              ...   # members are masked SA ids or raw human/external emails
+
+  # 3. tie it together — shared caller IP across actors is the smoking gun
+  corr = correlate_by_actor(changes, data.get("log_entries", []))
+  print(json.dumps(redact_sensitive({
+      "shared_ips": corr["shared_ips"],
+      "top_actors": corr["actors"][:5],
+  }), indent=2, default=str))
+
+API REFERENCE:"""
+
 _TOOLS = [
     {
         "name": "describe_capabilities",
@@ -38,7 +87,7 @@ _TOOLS = [
 
 def build_capabilities() -> str:
     """Walk gcp_policy_analyzer.__all__ and return a formatted API summary string."""
-    lines = []
+    lines = [_PREAMBLE, ""]
     for name in gcp_policy_analyzer.__all__:
         obj = getattr(gcp_policy_analyzer, name)
         doc = inspect.getdoc(obj)

@@ -283,6 +283,51 @@ class TestLogsModule(unittest.TestCase):
             self.fail(f"filter_log_entries raised TypeError with naive datetimes: {exc}")
         self.assertEqual(len(result), 1)
 
+    def test_correlate_by_actor_flags_shared_and_anomalous_ips(self):
+        """correlate_by_actor groups activity per principal and surfaces the join signal:
+        an IP used by more than one actor, and an IP that is a minority for an actor."""
+        from gcp_policy_analyzer.logs import correlate_by_actor
+
+        # alice uses one IP normally; sa-bot uses .10 for 4 events and .99 once (anomalous);
+        # attacker uses .99 (its only event). .99 is shared across sa-bot and attacker.
+        entries = [
+            {"principalEmail": "alice@corp.example", "callerIp": "10.0.0.1",
+             "methodName": "m1", "timestamp": "2026-11-01T10:00:00Z", "resourceName": "r"},
+            {"principalEmail": "sa-bot@p.iam.gserviceaccount.com", "callerIp": "10.0.0.2",
+             "methodName": "m2", "timestamp": "2026-11-02T10:00:00Z", "resourceName": "r"},
+            {"principalEmail": "sa-bot@p.iam.gserviceaccount.com", "callerIp": "10.0.0.2",
+             "methodName": "m2", "timestamp": "2026-11-02T11:00:00Z", "resourceName": "r"},
+            {"principalEmail": "sa-bot@p.iam.gserviceaccount.com", "callerIp": "10.0.0.2",
+             "methodName": "m2", "timestamp": "2026-11-02T12:00:00Z", "resourceName": "r"},
+            {"principalEmail": "sa-bot@p.iam.gserviceaccount.com", "callerIp": "10.0.0.2",
+             "methodName": "m2", "timestamp": "2026-11-02T13:00:00Z", "resourceName": "r"},
+            {"principalEmail": "sa-bot@p.iam.gserviceaccount.com", "callerIp": "198.51.100.99",
+             "methodName": "firewalls.patch", "timestamp": "2026-11-03T02:00:00Z", "resourceName": "r"},
+            {"principalEmail": "attacker@evil.example", "callerIp": "198.51.100.99",
+             "methodName": "keys.create", "timestamp": "2026-11-01T02:00:00Z", "resourceName": "r"},
+        ]
+        report = correlate_by_actor([], entries)
+
+        # shared_ips surfaces the smoking gun: 198.51.100.99 used by two distinct actors
+        self.assertIn("198.51.100.99", report["shared_ips"])
+        self.assertEqual(
+            set(report["shared_ips"]["198.51.100.99"]),
+            {"sa-bot@p.iam.gserviceaccount.com", "attacker@evil.example"},
+        )
+        self.assertNotIn("10.0.0.1", report["shared_ips"])  # single-actor IP not shared
+
+        # per-actor anomalous IP: sa-bot's .99 is a 1-of-5 minority → flagged
+        by_actor = {a["actor"]: a for a in report["actors"]}
+        self.assertIn("198.51.100.99", by_actor["sa-bot@p.iam.gserviceaccount.com"]["anomalous_ips"])
+        self.assertNotIn("10.0.0.2", by_actor["sa-bot@p.iam.gserviceaccount.com"]["anomalous_ips"])
+
+    def test_correlate_by_actor_empty(self):
+        """No entries → empty actors list and empty shared_ips."""
+        from gcp_policy_analyzer.logs import correlate_by_actor
+        report = correlate_by_actor([], [])
+        self.assertEqual(report["actors"], [])
+        self.assertEqual(report["shared_ips"], {})
+
 
 if __name__ == "__main__":
     unittest.main()
