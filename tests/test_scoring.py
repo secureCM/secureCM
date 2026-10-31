@@ -132,6 +132,35 @@ class TestScoreIamBinding(unittest.TestCase):
         result_custom = score_iam_binding(binding, toxic_combinations=custom_toxic)
         self.assertTrue(result_custom.toxic_combination)
 
+    def test_risk_score_has_score_and_flags(self):
+        """I7: RiskScore has score (int) and flags (list[str]) alongside existing booleans."""
+        from gcp_policy_analyzer.loaders import IamBinding
+        binding = IamBinding(
+            role="roles/iam.serviceAccountTokenCreator",
+            members=["serviceAccount:sa@project.iam.gserviceaccount.com"],
+        )
+        result = score_iam_binding(binding)
+        # existing booleans still present
+        self.assertTrue(result.is_high_privilege)
+        self.assertTrue(result.service_account_member)
+        self.assertTrue(result.toxic_combination)
+        # new fields
+        self.assertIsInstance(result.score, int)
+        self.assertIsInstance(result.flags, list)
+        self.assertIn("high_privilege", result.flags)
+        self.assertIn("service_account_member", result.flags)
+        self.assertIn("toxic_combination", result.flags)
+        # score = 30 + 10 + 40 = 80
+        self.assertEqual(result.score, 80)
+
+    def test_risk_score_low_privilege_zero(self):
+        """I7: low-privilege binding scores 0 with empty flags."""
+        from gcp_policy_analyzer.loaders import IamBinding
+        binding = IamBinding(role="roles/viewer", members=["user:alice@example.com"])
+        result = score_iam_binding(binding)
+        self.assertEqual(result.score, 0)
+        self.assertEqual(result.flags, [])
+
 
 class TestClassifyChange(unittest.TestCase):
     def setUp(self):
@@ -182,3 +211,17 @@ class TestClassifyChange(unittest.TestCase):
             principal="user:test@example.com",
         )
         self.assertEqual(classify_change(c), ChangeClass.Other)
+
+    def test_shadow_created_no_false_positive_when_priority_absent(self):
+        """I5: CREATE where after lacks 'priority' must NOT be ShadowCreated (None==None was bug)."""
+        c = Change(
+            resource="projects/test/global/firewalls/new-rule",
+            resource_type="firewall_rule",
+            action="CREATE",
+            before={},
+            after={"allowed": [{"IPProtocol": "tcp", "ports": ["443"]}]},
+            timestamp=_ts("2025-01-01T00:00:00Z"),
+            principal="user:test@example.com",
+        )
+        result = classify_change(c)
+        self.assertNotEqual(result, ChangeClass.ShadowCreated)

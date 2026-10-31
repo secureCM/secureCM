@@ -62,6 +62,23 @@ class TestMcpServer(unittest.TestCase):
         self.assertEqual(resp["id"], 6)
         self.assertIn("Unknown tool", resp["error"]["message"])
 
+    def test_run_script_redacts_sa_email_in_stdout(self):
+        """C3: run_script must redact SA emails in stdout before returning."""
+        code = 'print("terraform-deployer@example-prod-project.iam.gserviceaccount.com")'
+        resp = self.handle({
+            "jsonrpc": "2.0", "id": 7,
+            "method": "tools/call",
+            "params": {"name": "run_script", "arguments": {"code": code}},
+        })
+        text = resp["result"]["content"][0]["text"]
+        self.assertNotIn("terraform-deployer", text)
+        self.assertIn("sa-", text)
+
+    def test_initialize_has_version(self):
+        """I14: initialize result must include serverInfo.version."""
+        resp = self.handle({"jsonrpc": "2.0", "id": 8, "method": "initialize", "params": {}})
+        self.assertEqual(resp["result"]["serverInfo"]["version"], "0.1.0")
+
 
 if __name__ == "__main__":
     unittest.main()

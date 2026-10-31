@@ -42,6 +42,8 @@ class RiskScore:
     is_high_privilege: bool = False
     service_account_member: bool = False
     toxic_combination: bool = False
+    score: int = 0
+    flags: list[str] = field(default_factory=list)
 
 
 class ChangeClass(Enum):
@@ -100,9 +102,6 @@ def score_rule_exposure(rule) -> ExposureScore:
     if all_entries and _all_ports(all_entries):
         flags.append("all_ports")
         score += 20
-    elif not all_entries:
-        # no protocol entries — treat as all ports implied
-        pass
 
     if not log_enabled:
         flags.append("logging_disabled")
@@ -134,10 +133,24 @@ def score_iam_binding(binding, *, high_privilege_roles: frozenset[str] | None = 
     sa_member = any(is_service_account(m) for m in members)
     toxic = role in toxic_roles and sa_member
 
+    risk_flags: list[str] = []
+    risk_score = 0
+    if high_priv:
+        risk_flags.append("high_privilege")
+        risk_score += 30
+    if sa_member:
+        risk_flags.append("service_account_member")
+        risk_score += 10
+    if toxic:
+        risk_flags.append("toxic_combination")
+        risk_score += 40
+
     return RiskScore(
         is_high_privilege=high_priv,
         service_account_member=sa_member,
         toxic_combination=toxic,
+        score=risk_score,
+        flags=risk_flags,
     )
 
 
@@ -190,9 +203,13 @@ def classify_change(change) -> ChangeClass:
         if b.get("logConfig", {}).get("enable") is True and a.get("logConfig", {}).get("enable") is False:
             return ChangeClass.RemovedProtection
 
-    # ShadowCreated: CREATE of a disabled or duplicate-priority rule
+    # ShadowCreated: CREATE of a disabled rule, or duplicate-priority with an existing rule
     if action == "CREATE":
-        if a.get("disabled") or a.get("priority") == b.get("priority"):
+        if a.get("disabled") or (
+            a.get("priority") is not None
+            and b.get("priority") is not None
+            and a.get("priority") == b.get("priority")
+        ):
             return ChangeClass.ShadowCreated
 
     # LeastPrivilegeImproved: high-priv role removed

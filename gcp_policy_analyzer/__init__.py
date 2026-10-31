@@ -65,13 +65,13 @@ def analyze(
         start: window start (UTC-aware)
         end: window end (UTC-aware)
         resource_types: optional filter by resource_type strings from audit_changes records
-            (e.g. "vpc_firewall_rule", "iam_policy")
+            (e.g. "firewall_rule", "iam_policy")
 
     Returns:
         redacted report dict with keys: summary, prioritized, stats
     """
     all_changes = load_audit_changes(data, resource_types=resource_types, start=start, end=end)
-    prioritized = prioritize_changes(all_changes)
+    prioritized = prioritize_changes(all_changes, context=data)
     window = f"{start.date()} to {end.date()}"
     report = format_report(prioritized, all_changes=all_changes)
     # Augment summary with window and counts

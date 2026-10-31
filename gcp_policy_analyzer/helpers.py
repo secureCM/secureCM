@@ -25,8 +25,10 @@ def is_production(
     """True iff obj has a label whose key is in label_keys and value in label_values."""
     keys = label_keys if label_keys is not None else PROD_LABEL_KEYS
     values = label_values if label_values is not None else PROD_LABEL_VALUES
+    # Normalize values to lowercase for case-insensitive comparison
+    lower_values = {str(v).lower() for v in values}
     labels = _get_labels(obj)
-    return any(labels.get(k, "").lower() in values for k in keys)
+    return any(str(labels.get(k, "")).lower() in lower_values for k in keys)
 
 
 def is_service_account(member: str | dict) -> bool:

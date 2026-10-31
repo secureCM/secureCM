@@ -73,7 +73,7 @@ Scores a firewall rule on: open-to-world source ranges (+40), all ports (+20), l
 ```
 score_iam_binding(binding, *, high_privilege_roles=None, toxic_combinations=None) -> RiskScore
 ```
-RiskScore: `is_high_privilege` (bool), `service_account_member` (bool), `toxic_combination` (bool).
+RiskScore: `is_high_privilege` (bool), `service_account_member` (bool), `toxic_combination` (bool), `score` (int, sum of fired flag weights: +30 high_privilege, +10 service_account_member, +40 toxic_combination), `flags` (list[str] of fired flag names).
 
 Defaults: `HIGH_PRIVILEGE_ROLES` = `{roles/owner, roles/editor, roles/iam.securityAdmin, roles/iam.serviceAccountTokenCreator, roles/iam.serviceAccountKeyAdmin}`; `TOXIC_COMBINATIONS` = `{roles/iam.serviceAccountTokenCreator, roles/iam.serviceAccountKeyAdmin, roles/iam.securityAdmin}`. Pass keyword args to override.
 
@@ -169,10 +169,10 @@ Expected output shape:
       "principal": "sa-8ac9c3@example-prod-project.iam.gserviceaccount.com",
       "change_class": "BroadenedAccess",
       "blast_radius": {
-        "affected_resources": 1,
+        "affected_resources": 14,
         "external_exposure": true,
         "production": true,
-        "score": 4
+        "score": 56
       },
       "risk_delta": 0,
       "timestamp": "2026-10-30T16:22:41+00:00"
@@ -184,10 +184,10 @@ Expected output shape:
       "principal": "sa-8ac9c3@example-prod-project.iam.gserviceaccount.com",
       "change_class": "RemovedProtection",
       "blast_radius": {
-        "affected_resources": 1,
+        "affected_resources": 14,
         "external_exposure": false,
         "production": true,
-        "score": 2
+        "score": 28
       },
       "risk_delta": 0,
       "timestamp": "2026-10-30T16:23:05+00:00"
@@ -224,10 +224,10 @@ Multi-step pipeline over a 7-day window. Expected output shape:
     "change_class": "BroadenedAccess",
     "timestamp": "2026-10-30T16:22:41+00:00",
     "blast_radius": {
-      "affected_resources": 1,
+      "affected_resources": 14,
       "external_exposure": true,
       "production": true,
-      "score": 4
+      "score": 56
     },
     "risk_delta": 0
   },
@@ -238,10 +238,10 @@ Multi-step pipeline over a 7-day window. Expected output shape:
     "change_class": "RemovedProtection",
     "timestamp": "2026-10-30T16:23:05+00:00",
     "blast_radius": {
-      "affected_resources": 1,
+      "affected_resources": 14,
       "external_exposure": false,
       "production": true,
-      "score": 2
+      "score": 28
     },
     "risk_delta": 0
   }
@@ -500,3 +500,5 @@ Custom redactors run after the built-ins inside every `redact_sensitive` call, i
 - **Blast radius is the simple version.** `compute_blast_radius` counts resources that share a network or project with the changed resource, multiplied by exposure and production flags. It is not a graph engine; it does not trace transitive dependencies, VPC peering, or cross-project bindings. The number is a prioritization signal, not a precise impact assessment.
 
 - **Production detection is label-only.** `is_production` returns `True` only when the resource carries a label with key in `{env, environment}` and value in `{prod, production}`. There is no name-pattern guessing. If a resource is not labelled, this function returns `False` — and blast-radius scores, filtering, and the `seven_day_exposure.py` example will treat it as non-production. **Label your production resources.**
+
+- **`diff_policies` description-only changes classify as `Other`, not `Neutral`.** When comparing two snapshots, `diff_policies` records carry full resource records in `before`/`after`; a description-only change produces a `Change` whose `before` and `after` each contain many fields beyond `description`, so `classify_change` sees a non-trivial diff and returns `Other`. The `Neutral` classification applies only to audit-log changes where `before`/`after` are the partial diffs stored in the audit record.

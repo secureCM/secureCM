@@ -262,5 +262,27 @@ class TestLogsModule(unittest.TestCase):
         })
 
 
+    def test_filter_accepts_naive_datetime(self):
+        """I6: filter_log_entries must not raise TypeError when start/end are naive datetimes."""
+        filter_log_entries, _ = self._import_logs()
+
+        entries = [
+            {
+                "methodName": "v1.compute.firewalls.patch",
+                "principalEmail": "user@example.com",
+                "timestamp": "2026-10-30T16:22:41Z",
+                "resourceName": "projects/p/global/firewalls/rule1",
+            }
+        ]
+        # naive datetimes (no tzinfo) — must not raise
+        start = datetime(2026, 10, 30, 16, 22, 0)   # naive
+        end = datetime(2026, 10, 30, 16, 23, 0)     # naive
+        try:
+            result = filter_log_entries(entries, start=start, end=end)
+        except TypeError as exc:
+            self.fail(f"filter_log_entries raised TypeError with naive datetimes: {exc}")
+        self.assertEqual(len(result), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

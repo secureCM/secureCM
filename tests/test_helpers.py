@@ -34,6 +34,26 @@ class TestIsProduction(unittest.TestCase):
             label_values=("live",),
         ))
 
+    def test_non_string_label_value_does_not_raise(self):
+        """I9: non-string label values (int, bool) must not raise."""
+        obj = {"labels": {"env": 1}}  # int value
+        try:
+            result = is_production(obj)
+        except (AttributeError, TypeError) as exc:
+            self.fail(f"is_production raised with non-string label value: {exc}")
+        self.assertFalse(result)  # 1 != "prod"
+
+    def test_uppercase_custom_label_value_matches(self):
+        """I10: custom label_values with uppercase should match lowercase stored label."""
+        self.assertTrue(is_production(
+            {"labels": {"env": "prod"}},
+            label_values=("PROD",),
+        ))
+
+    def test_uppercase_stored_label_matches_default(self):
+        """I10: stored label 'PROD' should match default label_values."""
+        self.assertTrue(is_production({"labels": {"env": "PROD"}}))
+
 
 class TestIsServiceAccount(unittest.TestCase):
     def test_is_service_account_prefix_and_domain(self):

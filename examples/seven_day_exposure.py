@@ -62,13 +62,14 @@ for policy in policies:
 # 4. Keep changes whose principal is a high-priv SA
 hits = [c for c in risky if c.principal in high_priv_sas]
 
-# 5. Sort by blast radius score descending
-hits.sort(key=lambda c: compute_blast_radius(c).score, reverse=True)
+# 5. Sort by blast radius score descending (compute once per change with context)
+blast_radii = {id(c): compute_blast_radius(c, data) for c in hits}
+hits.sort(key=lambda c: blast_radii[id(c)].score, reverse=True)
 
 # 6. Serialize and redact
 output = []
 for c in hits:
-    br = compute_blast_radius(c)
+    br = blast_radii[id(c)]
     output.append({
         "resource": c.resource,
         "action": c.action,

@@ -96,38 +96,32 @@ def _redact_recursive(obj: Any, patterns: list[re.Pattern], salt: str) -> Any:
     if isinstance(obj, list):
         return [_redact_recursive(item, patterns, salt) for item in obj]
 
-    # String: check SA email, path, secret patterns
+    # String: secrets first, then SA-email substitution, then path-shortening
     if isinstance(obj, str):
-        # SA email: local@proj.iam.gserviceaccount.com
-        if "@" in obj and ".iam.gserviceaccount.com" in obj:
-            if _is_sa_email(obj):
-                return _mask_sa_email(obj, salt)
-
-        # Path with 4+ segments
-        if "/" in obj:
-            segments = obj.split("/")
-            if len(segments) >= 4:
-                return f".../{segments[-2]}/{segments[-1]}"
-
-        # Secret patterns
+        # 1. Secret patterns — whole-string replacement (handles PEM, API keys in URLs, etc.)
         for pattern in patterns:
             if pattern.search(obj):
                 return "[REDACTED]"
+
+        # 2. SA-email substitution: replace every occurrence (handles sentences, multi-email)
+        if "@" in obj and ".iam.gserviceaccount.com" in obj:
+            obj = re.sub(
+                r"[A-Za-z0-9._%+\-]+@([A-Za-z0-9.\-]+\.iam\.gserviceaccount\.com)",
+                lambda m: _mask_sa_email(m.group(0), salt),
+                obj,
+            )
+
+        # 3. Path-shortening: only when string looks like a bare resource path
+        #    (no whitespace and no "@" — preserves plain paths, skips sentences/masked emails)
+        if "/" in obj and " " not in obj and "@" not in obj:
+            segments = obj.split("/")
+            if len(segments) >= 4:
+                return f".../{segments[-2]}/{segments[-1]}"
 
         return obj
 
     # Non-string, non-container: preserve as-is
     return obj
-
-
-def _is_sa_email(s: str) -> bool:
-    """Check if string looks like SA email."""
-    # Simple heuristic: contains @ and .iam.gserviceaccount.com
-    parts = s.split("@")
-    if len(parts) == 2:
-        local, domain = parts
-        return ".iam.gserviceaccount.com" in domain
-    return False
 
 
 def _mask_sa_email(email: str, salt: str) -> str:

@@ -127,5 +127,57 @@ class TestRedactSensitive(unittest.TestCase):
         self.assertEqual(result["servers"][1]["ip"], "10.0.0.0/24")
 
 
+    # ---- C1 probe tests ----
+
+    def test_pem_body_with_slashes_is_redacted(self):
+        """C1: PEM block whose base64 contains '/' must be [REDACTED], not path-shortened."""
+        # fake PEM header triggers the pattern; base64 body contains slashes
+        pem = "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASC/BKS\nABCD1234/+xyz\n-----END PRIVATE KEY-----"
+        result = redact_sensitive(pem)
+        self.assertEqual(result, "[REDACTED]")
+        self.assertNotIn("MIIEvQ", result)
+        self.assertNotIn("BAQEFAASC", result)
+
+    def test_api_key_in_url_is_redacted(self):
+        """C1: API key embedded in a URL must be [REDACTED] — not path-shortened."""
+        # AIza + exactly 35 alphanum/_/- chars = valid Google API key pattern
+        url = "https://example.com/maps/key?key=AIzaSyDummyKeyWith35MoreCharacters1234567"
+        result = redact_sensitive(url)
+        self.assertEqual(result, "[REDACTED]")
+        self.assertNotIn("AIza", result)
+
+    # ---- C2 probe tests ----
+
+    def test_multiple_sa_emails_in_sentence_both_masked(self):
+        """C2: sentence containing two SA emails — both must be masked, neither local part present."""
+        s = "x@p.iam.gserviceaccount.com and y@p.iam.gserviceaccount.com"
+        result = redact_sensitive(s)
+        self.assertNotIn("x@", result)
+        self.assertNotIn("y@", result)
+        # both masked occurrences present
+        self.assertIn("sa-", result)
+        self.assertIn("@p.iam.gserviceaccount.com", result)
+
+    def test_path_not_shortened_when_contains_at(self):
+        """C2 order: a masked SA-email string should not be path-shortened (it contains @)."""
+        s = "my-sa@p.iam.gserviceaccount.com"
+        result = redact_sensitive(s)
+        # must be masked, not ".../..."
+        self.assertTrue(result.startswith("sa-"))
+        self.assertNotIn("...", result)
+
+    def test_plain_path_still_shortened(self):
+        """Path-shortening still applies to bare resource paths (no spaces, no @)."""
+        result = redact_sensitive("projects/my-proj/global/firewalls/my-fw")
+        self.assertEqual(result, ".../firewalls/my-fw")
+
+    def test_path_with_spaces_not_shortened(self):
+        """Paths with spaces are not path-shortened (they're not bare resource paths)."""
+        result = redact_sensitive("see projects/my-proj/global/firewalls/my-fw for details")
+        # should be returned as-is (no secrets, no SA emails)
+        self.assertIn("projects/my-proj", result)
+        self.assertNotIn("...", result)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -79,6 +79,8 @@ def _call_tool(name: str, args: dict) -> dict:
                 text += f"\n[stderr]\n{result.stderr}"
         else:
             text = result.stdout
+        # Redact stdout/stderr before returning — trust boundary
+        text = gcp_policy_analyzer.redact_sensitive(text)
     else:
         return {"error": {"code": -32602, "message": f"Unknown tool: {name}"}}
     return {"content": [{"type": "text", "text": text}]}
@@ -96,7 +98,7 @@ def handle_request(req: dict) -> dict | None:
     if method == "initialize":
         return _ok(req_id, {
             "protocolVersion": "2024-11-05",
-            "serverInfo": {"name": "gcp-policy-analyzer-codemode"},
+            "serverInfo": {"name": "gcp-policy-analyzer-codemode", "version": "0.1.0"},
             "capabilities": {"tools": {}},
         })
 

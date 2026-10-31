@@ -36,16 +36,18 @@ def filter_log_entries(
         if methods is not None and entry.get("methodName") not in methods:
             continue
 
-        # Filter by time window
+        # Filter by time window (normalize start/end to handle naive datetimes)
         if start is not None or end is not None:
             # Skip entries with missing or empty timestamp
             timestamp_str = entry.get("timestamp", "")
             if not timestamp_str:
                 continue
             entry_ts = _parse_ts(timestamp_str)
-            if start is not None and entry_ts < start:
+            _start = _parse_ts(start) if start is not None else None
+            _end = _parse_ts(end) if end is not None else None
+            if _start is not None and entry_ts < _start:
                 continue
-            if end is not None and entry_ts > end:
+            if _end is not None and entry_ts > _end:
                 continue
 
         result.append(entry)
