@@ -8,6 +8,9 @@ from urllib.parse import urlencode, urljoin
 from urllib.request import urlopen
 from urllib.error import URLError
 
+MAX_PAGES = 1000
+MAX_RESPONSE_BYTES = 50 * 1024 * 1024  # 50 MB
+
 _RESOURCE_TYPES = (
     "iam_policies",
     "vpc_firewall_rules",
@@ -39,8 +42,12 @@ def fetch_export(
 
     merged: dict = {}
     page_token = None
+    pages_fetched = 0
 
     while True:
+        if pages_fetched >= MAX_PAGES:
+            raise BrokerError(f"pagination exceeded {MAX_PAGES} pages for {urljoin(base_url.rstrip('/') + '/', 'export')}")
+
         if page_token:
             params["pageToken"] = page_token
         elif "pageToken" in params:
@@ -51,12 +58,15 @@ def fetch_export(
         try:
             with urlopen(url, timeout=timeout) as resp:
                 status = resp.status
-                raw = resp.read()
+                raw = resp.read(MAX_RESPONSE_BYTES + 1)
         except URLError as exc:
             raise BrokerError(f"Request failed for {url}: {exc}") from exc
 
         if status != 200:
             raise BrokerError(f"Broker returned {status} for {url}")
+
+        if len(raw) > MAX_RESPONSE_BYTES:
+            raise BrokerError(f"Response exceeds {MAX_RESPONSE_BYTES} bytes for {url}")
 
         try:
             data = json.loads(raw)
@@ -65,13 +75,14 @@ def fetch_export(
 
         page_token = data.pop("nextPageToken", None)
 
-        # Merge: concatenate list values, take last scalar for non-list keys
+        # ponytail: per-type keys are non-overlapping by contract, last-writer-wins
         for key, val in data.items():
             if isinstance(val, list) and key in merged and isinstance(merged[key], list):
                 merged[key].extend(val)
             else:
                 merged[key] = val
 
+        pages_fetched += 1
         if not page_token:
             break
 

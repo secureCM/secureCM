@@ -11,7 +11,8 @@ from gcp_policy_analyzer.fetch import BrokerError, fetch_all, fetch_export
 class _Handler(BaseHTTPRequestHandler):
     """Stub HTTP handler; behaviour set via class-level dict keyed by path."""
 
-    routes: dict = {}  # set in setUpClass
+    routes: dict = {}  # set per-test, guarded by routes_lock
+    routes_lock = threading.Lock()
 
     def log_message(self, *_):  # silence test output
         pass
@@ -20,11 +21,12 @@ class _Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         params = parse_qs(parsed.query)
         key = (parsed.path, params.get("type", [""])[0], params.get("pageToken", [None])[0])
-        if key not in self.routes:
-            self.send_response(404)
-            self.end_headers()
-            return
-        status, body = self.routes[key]
+        with _Handler.routes_lock:
+            if key not in self.routes:
+                self.send_response(404)
+                self.end_headers()
+                return
+            status, body = self.routes[key]
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.end_headers()
@@ -35,7 +37,6 @@ class TestFetch(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        _Handler.routes = {}
         cls.server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
         cls.port = cls.server.server_address[1]
         cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
@@ -44,6 +45,16 @@ class TestFetch(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.server.shutdown()
+
+    def setUp(self):
+        """Clear routes before each test."""
+        with _Handler.routes_lock:
+            _Handler.routes = {}
+
+    def tearDown(self):
+        """Clear routes after each test."""
+        with _Handler.routes_lock:
+            _Handler.routes = {}
 
     @property
     def base_url(self):
@@ -74,8 +85,10 @@ class TestFetch(unittest.TestCase):
 
     def test_bad_json_raises_brokererror(self):
         _Handler.routes[("/export", "log_entries", None)] = (200, b"not json{{{")
-        with self.assertRaises(BrokerError):
+        with self.assertRaises(BrokerError) as ctx:
             fetch_export(self.base_url, "log_entries", "projects/demo")
+        msg = str(ctx.exception)
+        self.assertIn(self.base_url, msg)
 
     def test_fetch_all_merges_resource_types(self):
         types = ("iam_policies", "vpc_firewall_rules", "network_firewall_policies",
@@ -86,3 +99,39 @@ class TestFetch(unittest.TestCase):
         for t in types:
             self.assertIn(t, result)
             self.assertEqual(result[t], [{"t": t}])
+
+    def test_pagination_exceeds_max_pages(self):
+        """Pagination that exceeds MAX_PAGES raises BrokerError."""
+        import gcp_policy_analyzer.fetch as fetch_module
+        original_max = fetch_module.MAX_PAGES
+        try:
+            fetch_module.MAX_PAGES = 3
+            # Set up 4 pages (exceeds limit of 3)
+            _Handler.routes[("/export", "iam_policies", None)] = (200, json.dumps({"iam_policies": [{"id": "1"}], "nextPageToken": "p1"}))
+            _Handler.routes[("/export", "iam_policies", "p1")] = (200, json.dumps({"iam_policies": [{"id": "2"}], "nextPageToken": "p2"}))
+            _Handler.routes[("/export", "iam_policies", "p2")] = (200, json.dumps({"iam_policies": [{"id": "3"}], "nextPageToken": "p3"}))
+            _Handler.routes[("/export", "iam_policies", "p3")] = (200, json.dumps({"iam_policies": [{"id": "4"}]}))
+            with self.assertRaises(BrokerError) as ctx:
+                fetch_export(self.base_url, "iam_policies", "projects/demo")
+            msg = str(ctx.exception)
+            self.assertIn("pagination exceeded", msg)
+            self.assertIn("3", msg)
+        finally:
+            fetch_module.MAX_PAGES = original_max
+
+    def test_response_exceeds_max_bytes(self):
+        """Response exceeding MAX_RESPONSE_BYTES raises BrokerError."""
+        import gcp_policy_analyzer.fetch as fetch_module
+        original_max = fetch_module.MAX_RESPONSE_BYTES
+        try:
+            fetch_module.MAX_RESPONSE_BYTES = 100  # Small limit for testing
+            # Create a large payload
+            large_payload = json.dumps({"data": "x" * 1000})
+            _Handler.routes[("/export", "iam_policies", None)] = (200, large_payload)
+            with self.assertRaises(BrokerError) as ctx:
+                fetch_export(self.base_url, "iam_policies", "projects/demo")
+            msg = str(ctx.exception)
+            self.assertIn("exceeds", msg)
+            self.assertIn(self.base_url, msg)
+        finally:
+            fetch_module.MAX_RESPONSE_BYTES = original_max
