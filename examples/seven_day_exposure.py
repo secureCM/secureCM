@@ -14,6 +14,7 @@ Usage:
 import json
 import pathlib
 import sys
+from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
@@ -65,7 +66,6 @@ hits = [c for c in risky if c.principal in high_priv_sas]
 hits.sort(key=lambda c: compute_blast_radius(c).score, reverse=True)
 
 # 6. Serialize and redact
-from dataclasses import asdict
 output = []
 for c in hits:
     br = compute_blast_radius(c)

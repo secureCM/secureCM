@@ -64,7 +64,8 @@ def analyze(
         data: raw export dict (from fetch_all or fixture)
         start: window start (UTC-aware)
         end: window end (UTC-aware)
-        resource_types: optional filter (e.g. ["firewall_rule"])
+        resource_types: optional filter by resource_type strings from audit_changes records
+            (e.g. "vpc_firewall_rule", "iam_policy")
 
     Returns:
         redacted report dict with keys: summary, prioritized, stats

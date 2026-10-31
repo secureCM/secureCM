@@ -10,7 +10,6 @@ def _load_fixture():
     import pathlib
     p = pathlib.Path(__file__).parent.parent / "fixtures" / "synthetic.json"
     with open(p) as f:
-        import json
         return json.load(f)
 
 
