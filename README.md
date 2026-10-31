@@ -493,6 +493,57 @@ Custom redactors run after the built-ins inside every `redact_sensitive` call, i
 
 ---
 
+## Coverage
+
+### ATT&CK catalog and report
+
+The `attack_coverage` package ships a catalog of GCP-relevant MITRE ATT&CK techniques and a coverage report that maps each technique to the detectors that fire on it.
+
+```bash
+python -m attack_coverage.report
+```
+
+Prints a JSON object with `total_techniques`, `covered`, `coverage_pct`, and a `techniques` list showing which are covered and why the rest are not. The underlying data is in `attack_coverage/attack_catalog.json`; `attack_coverage.catalog.build_report()` returns it programmatically.
+
+### Scope: three surfaces
+
+Coverage is limited to three control-plane surfaces that this library can observe:
+
+- **IAM bindings** (`iam_policies`)
+- **VPC firewall rules** (`vpc_firewall_rules`, `network_firewall_policies`)
+- **Admin Activity audit logs** (`audit_changes`, `log_entries`)
+
+### Why most of the ATT&CK matrix is out-of-scope
+
+The library sees only GCP control-plane telemetry. Techniques that require endpoint telemetry (process, file, registry), network traffic analysis, EDR signals, or data-plane visibility (e.g., object storage access logs, runtime behavior) cannot be detected here. The out-of-scope techniques are marked in the catalog with a `surface_reason` explaining which telemetry source they require.
+
+### In-scope techniques
+
+| Technique | Name |
+|-----------|------|
+| T1098 | Account Manipulation |
+| T1098.003 | Account Manipulation: Additional Cloud Roles |
+| T1199 | Trusted Relationship |
+| T1562 | Impair Defenses |
+| T1562.007 | Impair Defenses: Disable or Modify Cloud Firewall |
+| T1485 | Data Destruction |
+| T1580 | Cloud Infrastructure Discovery |
+| T1069.003 | Permission Groups Discovery: Cloud Groups |
+| T1078.004 | Valid Accounts: Cloud Accounts |
+
+### Running all detectors in one call
+
+```python
+from attack_coverage.signatures import run_detectors
+findings = run_detectors(envelope)   # envelope is the raw export dict
+for f in findings:
+    print(f.technique, f.severity, f.message)
+```
+
+Each `Finding` (importable from `gcp_policy_analyzer`) has: `technique` (ATT&CK ID string), `severity` (`high`/`medium`/`low`), `message` (human-readable summary), and `evidence` (list of supporting data points).
+
+---
+
 ## Limitations
 
 - **Heuristics are heuristics.** Scoring weights, `HIGH_PRIVILEGE_ROLES`, `TOXIC_COMBINATIONS`, and production label conventions ship as module-level constants and are intentionally overridable. The defaults are reasonable starting points, not ground truth. Override them by passing keyword arguments or editing the constants.

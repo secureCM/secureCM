@@ -63,6 +63,27 @@ WORKED EXAMPLE (complex question, end to end):
       "top_actors": corr["actors"][:5],
   }), indent=2, default=str))
 
+COVERAGE (ATT&CK-tagged detections):
+  Scope: IAM bindings, VPC firewall rules, Admin Activity audit logs — three surfaces only.
+  Most of the ATT&CK matrix is out-of-scope: endpoints, network traffic, EDR telemetry,
+  and any data-plane signals are not present on these control-plane surfaces.
+
+  In-scope techniques detected:
+    T1098        Account Manipulation
+    T1098.003    Account Manipulation: Additional Cloud Roles
+    T1199        Trusted Relationship
+    T1562        Impair Defenses
+    T1562.007    Impair Defenses: Disable or Modify Cloud Firewall
+    T1485        Data Destruction
+    T1580        Cloud Infrastructure Discovery
+    T1069.003    Permission Groups Discovery: Cloud Groups
+    T1078.004    Valid Accounts: Cloud Accounts
+
+  To get ATT&CK-tagged findings for all detectors in one call:
+    from attack_coverage.signatures import run_detectors
+    findings = run_detectors(envelope)   # envelope is the raw export dict
+    # each Finding has .technique, .severity, .message, .evidence
+
 API REFERENCE:"""
 
 _TOOLS = [

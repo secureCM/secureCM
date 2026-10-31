@@ -21,6 +21,14 @@ from gcp_policy_analyzer.prioritize import (
     compute_blast_radius,
 )
 from gcp_policy_analyzer.logs import filter_log_entries, correlate_changes_with_logs, correlate_by_actor
+from gcp_policy_analyzer.detect import (
+    Finding,
+    detect_firewall_exposure,
+    detect_privilege_grant,
+    detect_discovery_bursts,
+    detect_anomalous_actor,
+    cross_project_timeline,
+)
 from gcp_policy_analyzer.redact import redact_sensitive, register_redactor
 from gcp_policy_analyzer.helpers import is_production, is_service_account, format_report
 from gcp_policy_analyzer.fetch import fetch_export, fetch_all, BrokerError
@@ -45,6 +53,12 @@ __all__ = [
     "filter_log_entries",
     "correlate_changes_with_logs",
     "correlate_by_actor",
+    "Finding",
+    "detect_firewall_exposure",
+    "detect_privilege_grant",
+    "detect_discovery_bursts",
+    "detect_anomalous_actor",
+    "cross_project_timeline",
     "redact_sensitive",
     "register_redactor",
     "is_production",
