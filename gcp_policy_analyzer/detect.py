@@ -44,6 +44,17 @@ def _broad_ports(entries: list[dict]) -> bool:
     return False
 
 
+def _nfp_world_open_allow(rules: list[dict]) -> bool:
+    """True if any rule in a network_firewall_policy rules list is action=allow with a world-open srcIpRange."""
+    for rule in rules:
+        if rule.get("action") != "allow":
+            continue
+        src_ranges = rule.get("match", {}).get("srcIpRanges", [])
+        if _has_world(src_ranges):
+            return True
+    return False
+
+
 def detect_firewall_exposure(rules: list, changes: list) -> list[Finding]:  # noqa: ARG001
     """Detect ATT&CK T1562.007 and T1485 from firewall rules and audit changes."""
     # ponytail: rules list reserved for future static-rule scanning; unused now
@@ -58,6 +69,7 @@ def detect_firewall_exposure(rules: list, changes: list) -> list[Finding]:  # no
             labels: dict = change.get("labels", {})
             before: dict = change.get("before") or {}
             after: dict = change.get("after") or {}
+            resource_type: str = change.get("resource_type", "")
         else:
             action = getattr(change, "action", "")
             resource = getattr(change, "resource", "")
@@ -66,9 +78,27 @@ def detect_firewall_exposure(rules: list, changes: list) -> list[Finding]:  # no
             labels = getattr(change, "labels", {})
             before = getattr(change, "before", None) or {}
             after = getattr(change, "after", None) or {}
+            resource_type = getattr(change, "resource_type", "")
 
         prod = is_production(change)
         base_sev = "critical" if prod else "high"
+
+        # --- network_firewall_policy: world-open allow rule added/modified ---
+        if resource_type == "network_firewall_policy":
+            after_rules = after.get("rules", [])
+            before_rules = before.get("rules", [])
+            if _nfp_world_open_allow(after_rules) and not _nfp_world_open_allow(before_rules):
+                findings.append(Finding(
+                    technique_id="T1562.007",
+                    technique_name="Disable or Modify Cloud Firewall",
+                    tactic="defense-evasion",
+                    severity=base_sev,
+                    resource=resource,
+                    principal=principal,
+                    timestamp=timestamp,
+                    evidence={"after_rules": after_rules},
+                ))
+            continue  # NFP changes are fully handled here; skip VpcFirewallRule paths
 
         cc = classify_change(change)
 

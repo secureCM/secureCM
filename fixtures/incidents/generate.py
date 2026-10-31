@@ -355,6 +355,24 @@ def _noise_fw_change(rng: random.Random, t: datetime, project: str) -> dict:
     }
 
 
+def _noise_nfp_change(rng: random.Random, t: datetime, project: str) -> dict:
+    """Routine network_firewall_policy noise — internal-only rule tweak, never world-open."""
+    rule_name = f"corp-policy-{rng.randint(100, 999)}"
+    src = rng.choice(INTERNAL_RANGES)
+    return {
+        "resource": f"projects/{project}/global/firewallPolicies/{rule_name}",
+        "resource_type": "network_firewall_policy",
+        "action": "UPDATE",
+        "principal": rng.choice(CORP_PRINCIPALS),
+        "timestamp": _ts(t),
+        "before": {"rules": [{"priority": 1000, "direction": "INGRESS", "action": "allow",
+                               "match": {"srcIpRanges": [src]}}]},
+        "after": {"rules": [{"priority": 1000, "direction": "INGRESS", "action": "allow",
+                              "match": {"srcIpRanges": [rng.choice(INTERNAL_RANGES)]}}]},
+        "labels": {},
+    }
+
+
 def _noise_log(rng: random.Random, t: datetime, project: str) -> dict:
     method = rng.choice(["v1.compute.firewalls.patch", "SetIamPolicy", "v1.compute.firewalls.get"])
     return {
@@ -371,16 +389,20 @@ def _make_haystack(rng: random.Random) -> tuple[dict, dict]:
     audit_changes: list[dict] = []
     log_entries: list[dict] = []
 
-    # --- Noise: ~3000 routine changes across 45 days ---
+    # --- Noise: ~3100+ routine changes across 45 days ---
     base = ANCHOR
-    for _ in range(1800):
+    for _ in range(2200):
         t = _rand_ts(rng, base, 45)
         p = _rand_project(rng)
         audit_changes.append(_noise_iam_change(rng, t, p))
-    for _ in range(800):
+    for _ in range(900):
         t = _rand_ts(rng, base, 45)
         p = _rand_project(rng)
         audit_changes.append(_noise_fw_change(rng, t, p))
+    for _ in range(300):
+        t = _rand_ts(rng, base, 45)
+        p = _rand_project(rng)
+        audit_changes.append(_noise_nfp_change(rng, t, p))
     for _ in range(500):
         t = _rand_ts(rng, base, 45)
         p = _rand_project(rng)
@@ -519,6 +541,26 @@ def _make_haystack(rng: random.Random) -> tuple[dict, dict]:
         },
         "labels": {"env": "prod"},
     })
+
+    # -------------------------------------------------------------------------
+    # Campaign (f): network_firewall_policy world-open allow across prod (T1562.007)
+    # marker: "campaign-f-nfp-attacker" in resource path
+    # -------------------------------------------------------------------------
+    t_f = base + timedelta(days=38, hours=5)
+    for i, proj in enumerate(PROD_PROJECTS[:3]):
+        policy_name = f"campaign-f-nfp-attacker-policy-{proj}"
+        audit_changes.append({
+            "resource": f"projects/{proj}/global/firewallPolicies/{policy_name}",
+            "resource_type": "network_firewall_policy",
+            "action": "UPDATE",
+            "principal": f"infra-sa@{proj}.iam.gserviceaccount.com",
+            "timestamp": _ts(t_f + timedelta(hours=i)),
+            "before": {"rules": [{"priority": 1000, "direction": "INGRESS", "action": "allow",
+                                   "match": {"srcIpRanges": ["10.0.0.0/8"]}}]},
+            "after": {"rules": [{"priority": 1000, "direction": "INGRESS", "action": "allow",
+                                  "match": {"srcIpRanges": ["0.0.0.0/0"]}}]},
+            "labels": {"env": "prod"},
+        })
 
     # -------------------------------------------------------------------------
     # Decoy 1: reverted dev firewall — open to 0.0.0.0/0 then back to internal 2h later
@@ -670,6 +712,12 @@ def _make_haystack(rng: random.Random) -> tuple[dict, dict]:
                 "description": "Direct folder-scope token-creator binding to SA",
                 "marker": "campaign-e-sa-owner",
             },
+            {
+                "id": "campaign-f",
+                "techniques": ["T1562.007"],
+                "description": "Network firewall policy world-open allow across prod projects",
+                "marker": "campaign-f-nfp-attacker",
+            },
         ],
         "decoys": [
             {
@@ -721,7 +769,6 @@ def _write(path: Path, data: dict) -> None:
 
 
 def main(out_dir: Path | None = None) -> None:
-    random.seed(SEED)
     rng = random.Random(SEED)
 
     # Determine repo root (generate.py lives at fixtures/incidents/generate.py)

@@ -112,6 +112,65 @@ class TestDetectFirewallExposure(unittest.TestCase):
         from gcp_policy_analyzer.detect import detect_firewall_exposure
         self.assertEqual(detect_firewall_exposure([], []), [])
 
+    def test_nfp_world_open_allow_flags_T1562_007(self):
+        """network_firewall_policy change adding 0.0.0.0/0 allow rule → T1562.007."""
+        from gcp_policy_analyzer.detect import detect_firewall_exposure
+        change = _change(
+            "UPDATE",
+            {"rules": [{"priority": 1000, "direction": "INGRESS", "action": "allow",
+                        "match": {"srcIpRanges": ["10.0.0.0/8"]}}]},
+            {"rules": [{"priority": 1000, "direction": "INGRESS", "action": "allow",
+                        "match": {"srcIpRanges": ["0.0.0.0/0"]}}]},
+            resource_type="network_firewall_policy",
+        )
+        findings = detect_firewall_exposure([], [change])
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].technique_id, "T1562.007")
+
+    def test_nfp_world_open_already_present_not_flagged(self):
+        """network_firewall_policy already world-open before → no new finding."""
+        from gcp_policy_analyzer.detect import detect_firewall_exposure
+        change = _change(
+            "UPDATE",
+            {"rules": [{"priority": 1000, "direction": "INGRESS", "action": "allow",
+                        "match": {"srcIpRanges": ["0.0.0.0/0"]}}]},
+            {"rules": [{"priority": 1000, "direction": "INGRESS", "action": "allow",
+                        "match": {"srcIpRanges": ["0.0.0.0/0"]}}]},
+            resource_type="network_firewall_policy",
+        )
+        findings = detect_firewall_exposure([], [change])
+        self.assertEqual(findings, [])
+
+    def test_nfp_prod_label_makes_critical(self):
+        """NFP world-open allow on prod → severity critical."""
+        from gcp_policy_analyzer.detect import detect_firewall_exposure
+        change = _change(
+            "UPDATE",
+            {"rules": [{"priority": 1000, "direction": "INGRESS", "action": "allow",
+                        "match": {"srcIpRanges": ["10.0.0.0/8"]}}]},
+            {"rules": [{"priority": 1000, "direction": "INGRESS", "action": "allow",
+                        "match": {"srcIpRanges": ["0.0.0.0/0"]}}]},
+            labels={"env": "prod"},
+            resource_type="network_firewall_policy",
+        )
+        findings = detect_firewall_exposure([], [change])
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0].severity, "critical")
+
+    def test_nfp_deny_action_not_flagged(self):
+        """network_firewall_policy deny rule with 0.0.0.0/0 → not exposure (blocks, doesn't open)."""
+        from gcp_policy_analyzer.detect import detect_firewall_exposure
+        change = _change(
+            "UPDATE",
+            {"rules": [{"priority": 1000, "direction": "INGRESS", "action": "deny",
+                        "match": {"srcIpRanges": ["10.0.0.0/8"]}}]},
+            {"rules": [{"priority": 1000, "direction": "INGRESS", "action": "deny",
+                        "match": {"srcIpRanges": ["0.0.0.0/0"]}}]},
+            resource_type="network_firewall_policy",
+        )
+        findings = detect_firewall_exposure([], [change])
+        self.assertEqual(findings, [])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -46,14 +46,21 @@ class TestFixtureGenerator(unittest.TestCase):
                 )
 
     def test_haystack_only_inscope_resource_types(self):
-        """Every audit_change in inscope_haystack.json has an in-scope resource_type."""
+        """Every audit_change in inscope_haystack.json has an in-scope resource_type,
+        and all three surfaces (iam_policy, firewall_rule, network_firewall_policy) appear."""
         haystack = _load(INCIDENTS / "inscope_haystack.json")
+        seen_types: set[str] = set()
         for change in haystack.get("audit_changes", []):
             rt = change.get("resource_type")
             self.assertIn(
                 rt, VALID_RESOURCE_TYPES,
                 f"Out-of-scope resource_type {rt!r} in audit_changes",
             )
+            seen_types.add(rt)
+        self.assertEqual(
+            seen_types, VALID_RESOURCE_TYPES,
+            f"Not all three surfaces present; found: {seen_types}",
+        )
 
     def test_haystack_contains_each_campaign(self):
         """Ground truth lists >=5 campaigns; each campaign id appears in haystack."""

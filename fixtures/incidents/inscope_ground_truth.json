@@ -40,6 +40,14 @@
       "techniques": [
         "T1098"
       ]
+    },
+    {
+      "description": "Network firewall policy world-open allow across prod projects",
+      "id": "campaign-f",
+      "marker": "campaign-f-nfp-attacker",
+      "techniques": [
+        "T1562.007"
+      ]
     }
   ],
   "decoys": [
