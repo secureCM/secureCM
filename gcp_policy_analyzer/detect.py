@@ -384,9 +384,8 @@ def detect_discovery_bursts(
                         "call_count": window_size,
                     },
                 ))
-                # ponytail: emit one Finding per actor per burst start; advance left past it
+                # Skip past this burst; continue scanning the same actor for further bursts
                 left = right + 1
-                break  # one finding per actor; re-run outer loop handles additional bursts
 
     return findings
 
@@ -412,6 +411,29 @@ def detect_anomalous_actor(changes: list, logs: list) -> list[Finding]:
         if p:
             principals_in_scope.add(p)
 
+    # Index changes and logs by principal for resource lookup
+    changes_by_principal: dict[str, list] = {}
+    for change in changes:
+        p = change.principal if hasattr(change, "principal") else change.get("principal", "")
+        if p:
+            changes_by_principal.setdefault(p, []).append(change)
+    logs_by_principal: dict[str, list] = {}
+    for entry in logs:
+        p = entry.get("principalEmail", "")
+        if p:
+            logs_by_principal.setdefault(p, []).append(entry)
+
+    def _first_resource(actor: str) -> str:
+        for ch in changes_by_principal.get(actor, []):
+            r = ch.resource if hasattr(ch, "resource") else ch.get("resource", "")
+            if r:
+                return r
+        for entry in logs_by_principal.get(actor, []):
+            r = entry.get("resourceName", "") or entry.get("resource", "")
+            if r:
+                return r
+        return ""
+
     findings: list[Finding] = []
     for actor_info in result["actors"]:
         actor = actor_info["actor"]
@@ -426,7 +448,7 @@ def detect_anomalous_actor(changes: list, logs: list) -> list[Finding]:
             technique_name="Valid Accounts: Cloud Accounts",
             tactic="defense-evasion",
             severity="high",
-            resource="",  # no single resource; evidence carries details
+            resource=_first_resource(actor),
             principal=actor,
             timestamp=None,
             evidence={

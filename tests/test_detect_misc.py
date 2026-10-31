@@ -4,7 +4,9 @@ from datetime import datetime, timezone
 
 
 def _ts(offset_secs: int = 0) -> datetime:
-    return datetime(2026, 10, 31, 12, 0, offset_secs % 60, tzinfo=timezone.utc)
+    from datetime import timedelta
+    base = datetime(2026, 10, 31, 12, 0, 0, tzinfo=timezone.utc)
+    return base + timedelta(seconds=offset_secs)
 
 
 def _ts_abs(secs: int) -> datetime:
@@ -94,6 +96,26 @@ class TestDiscoveryBurst(unittest.TestCase):
         findings = detect_discovery_bursts(logs, window_seconds=300, min_calls=10)
         self.assertEqual(len(findings), 0)
 
+    def test_discovery_burst_two_separated_bursts_yields_two_findings(self):
+        """One actor with two separated 10-call bursts (t=0..9s and t=1000..1009s) => 2 Findings."""
+        from gcp_policy_analyzer.detect import detect_discovery_bursts
+
+        burst1 = [
+            _log("alice@example.com", "iam.googleapis.com.projects.serviceAccounts.list",
+                 "projects/p1/iam", ts_offset=i)
+            for i in range(10)  # t=0..9s
+        ]
+        burst2 = [
+            _log("alice@example.com", "iam.googleapis.com.projects.serviceAccounts.list",
+                 "projects/p1/iam", ts_offset=1000 + i)
+            for i in range(10)  # t=1000..1009s — 991s gap, well outside 300s window
+        ]
+        findings = detect_discovery_bursts(burst1 + burst2, window_seconds=300, min_calls=10)
+        self.assertEqual(len(findings), 2)
+        for f in findings:
+            self.assertEqual(f.principal, "alice@example.com")
+            self.assertEqual(f.technique_id, "T1580")
+
 
 class TestAnomalousActor(unittest.TestCase):
     def test_anomalous_actor_rotating_subnet(self):
@@ -116,6 +138,10 @@ class TestAnomalousActor(unittest.TestCase):
         self.assertIn("T1078.004", t_ids)
         actors = {f.principal for f in findings}
         self.assertIn("alice@example.com", actors)
+        # resource must be populated from the first in-scope change/log
+        alice_findings = [f for f in findings if f.principal == "alice@example.com"]
+        for f in alice_findings:
+            self.assertNotEqual(f.resource, "", "resource should be non-empty")
 
     def test_anomalous_actor_no_flag_single_stable_ip(self):
         """Principal with only one IP, all events => no finding."""
@@ -221,25 +247,40 @@ class TestCorrelateSubnet(unittest.TestCase):
         self.assertNotIn("185.220.101.1", result_subnet["shared_ips"])
 
     def test_correlate_subnet_deterministic(self):
-        """Tie order stable (for PYTHONHASHSEED variance)."""
-        from gcp_policy_analyzer.logs import correlate_by_actor
+        """Tie order stable across different PYTHONHASHSEED values (subprocess-verified)."""
+        import json
+        import os
+        import subprocess
+        import sys
 
-        entries = [
-            {"principalEmail": "a@x.com", "callerIp": "10.0.0.1", "methodName": "m", "timestamp": "2026-10-31T12:00:00Z"},
-            {"principalEmail": "b@x.com", "callerIp": "10.0.0.2", "methodName": "m", "timestamp": "2026-10-31T12:00:01Z"},
-            {"principalEmail": "c@x.com", "callerIp": "10.0.0.3", "methodName": "m", "timestamp": "2026-10-31T12:00:02Z"},
-        ]
-        result1 = correlate_by_actor([], entries, subnet_bits=24)
-        result2 = correlate_by_actor([], entries, subnet_bits=24)
+        script = """
+import json, sys
+from gcp_policy_analyzer.logs import correlate_by_actor
+entries = [
+    {"principalEmail": "a@x.com", "callerIp": "10.0.0.1", "methodName": "m", "timestamp": "2026-10-31T12:00:00Z"},
+    {"principalEmail": "b@x.com", "callerIp": "10.0.0.2", "methodName": "m", "timestamp": "2026-10-31T12:00:01Z"},
+    {"principalEmail": "c@x.com", "callerIp": "10.0.0.3", "methodName": "m", "timestamp": "2026-10-31T12:00:02Z"},
+]
+result = correlate_by_actor([], entries, subnet_bits=24)
+out = {
+    "actors": [a["actor"] for a in result["actors"]],
+    "shared_subnets": result["shared_subnets"],
+}
+print(json.dumps(out))
+"""
 
-        # Both runs produce same ordering
-        actors1 = [a["actor"] for a in result1["actors"]]
-        actors2 = [a["actor"] for a in result2["actors"]]
-        self.assertEqual(actors1, actors2)
+        def _run(seed: int) -> dict:
+            env = {**os.environ, "PYTHONHASHSEED": str(seed)}
+            proc = subprocess.run(
+                [sys.executable, "-c", script],
+                capture_output=True, text=True, env=env, check=True,
+            )
+            return json.loads(proc.stdout)
 
-        # shared_subnets value lists are sorted
-        for cidr, actor_list in result1["shared_subnets"].items():
-            self.assertEqual(actor_list, sorted(actor_list))
+        r1 = _run(0)
+        r2 = _run(99999)
+        self.assertEqual(r1["actors"], r2["actors"])
+        self.assertEqual(r1["shared_subnets"], r2["shared_subnets"])
 
     def test_correlate_subnet_ignores_non_ipv4(self):
         """IPv6 and unparseable IPs are ignored for subnet grouping."""
