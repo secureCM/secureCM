@@ -54,17 +54,26 @@
     {
       "description": "0.0.0.0/0 opened then reverted to internal within 2h in dev",
       "id": "reverted-dev-firewall",
-      "should_not_alert": true
+      "fires_but_benign": true,
+      "expected_technique": "T1562.007",
+      "resource": "projects/fake-dev-001/global/firewalls/decoy-revert-dev-fw",
+      "note": "The open fires T1562.007 because the stateless detector sees a world-open source range. The 2h revert is a separate event; a stateless detector cannot correlate the pair. Distinguishing benign short-lived changes from malicious ones requires an allowlist or temporal-correlation layer, which is out of the current three-surface scope."
     },
     {
       "description": "Approved read-only external viewer in staging",
       "id": "approved-external-viewer",
-      "should_not_alert": true
+      "fires_but_benign": true,
+      "expected_technique": "T1199",
+      "resource": "projects/fake-staging-001",
+      "note": "The grant to approved-external-viewer@trusted-vendor.example.com fires T1199 because the identity is non-corp and non-SA. It is an approved partner grant; distinguishing approved external partners from malicious external identities requires an allowlist, which is out of the current three-surface scope."
     },
     {
       "description": "Expected staging service-account owner",
       "id": "expected-staging-owner-sa",
-      "should_not_alert": true
+      "fires_but_benign": true,
+      "expected_technique": "T1098.003",
+      "resource": "projects/fake-staging-002",
+      "note": "staging-owner-sa@fake-staging-002 is granted roles/owner in staging as part of normal deploy automation. It fires T1098.003 because roles/owner is a high-privilege role. Distinguishing expected deploy SAs from malicious high-privilege grants requires an allowlist or behavioral baseline, which is out of the current three-surface scope."
     },
     {
       "description": "Firewall widened from /24 to /8 but stays internal",

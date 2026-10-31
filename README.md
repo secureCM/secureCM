@@ -503,7 +503,14 @@ The `attack_coverage` package ships a catalog of GCP-relevant MITRE ATT&CK techn
 python -m attack_coverage.report
 ```
 
-Prints a JSON object with `total_techniques`, `covered`, `coverage_pct`, and a `techniques` list showing which are covered and why the rest are not. The underlying data is in `attack_coverage/attack_catalog.json`; `attack_coverage.catalog.build_report()` returns it programmatically.
+Prints a text matrix showing per-tactic coverage. To get the report programmatically:
+
+```python
+from attack_coverage.report import build_report
+report = build_report()  # returns dict with keys: by_tactic, coverage, regressions, dangling, not_covered
+```
+
+The underlying technique catalog is in `attack_coverage/attack_catalog.json`.
 
 ### Scope: three surfaces
 
@@ -537,14 +544,16 @@ The library sees only GCP control-plane telemetry. Techniques that require endpo
 from attack_coverage.signatures import run_detectors
 findings = run_detectors(envelope)   # envelope is the raw export dict
 for f in findings:
-    print(f.technique, f.severity, f.message)
+    print(f.technique_id, f.technique_name, f.severity, f.resource)
 ```
 
-Each `Finding` (importable from `gcp_policy_analyzer`) has: `technique` (ATT&CK ID string), `severity` (`high`/`medium`/`low`), `message` (human-readable summary), and `evidence` (list of supporting data points).
+Each `Finding` (importable from `gcp_policy_analyzer.detect`) has: `technique_id` (ATT&CK ID string), `technique_name` (human-readable name), `tactic` (ATT&CK tactic string), `severity` (`critical`/`high`/`medium`/`low`), `resource` (GCP resource path), `principal` (identity that triggered it), `timestamp` (UTC datetime or None), and `evidence` (dict of supporting data).
 
 ---
 
 ## Limitations
+
+- **Detectors are stateless and high-recall.** Each detector evaluates a single event in isolation. Approved external grants, expected high-privilege service accounts, and changes that were reverted shortly after will all produce findings — the detector cannot distinguish benign-approved from malicious. Separating those cases requires an allowlist or behavioral-baseline layer that is out of scope for this release.
 
 - **Heuristics are heuristics.** Scoring weights, `HIGH_PRIVILEGE_ROLES`, `TOXIC_COMBINATIONS`, and production label conventions ship as module-level constants and are intentionally overridable. The defaults are reasonable starting points, not ground truth. Override them by passing keyword arguments or editing the constants.
 

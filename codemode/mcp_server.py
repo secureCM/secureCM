@@ -82,7 +82,10 @@ COVERAGE (ATT&CK-tagged detections):
   To get ATT&CK-tagged findings for all detectors in one call:
     from attack_coverage.signatures import run_detectors
     findings = run_detectors(envelope)   # envelope is the raw export dict
-    # each Finding has .technique, .severity, .message, .evidence
+    # each Finding has .technique_id, .technique_name, .severity, .resource,
+    # .principal, .tactic, .timestamp, .evidence (dict of supporting data)
+
+  Coverage: 9 in-scope techniques detected; run `python -m attack_coverage.report` for the live matrix.
 
 API REFERENCE:"""
 
