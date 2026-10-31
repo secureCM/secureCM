@@ -76,6 +76,7 @@ def _is_world_open(after: dict | None) -> bool:
 
 
 def compute_blast_radius(change: Change, context: dict | None = None) -> BlastRadius:
+    """Compute blast radius score for a change based on affected resources, external exposure, and production status."""
     affected = 1 if context is None else _count_affected(change, context)
     change_class = classify_change(change)
     external = change_class is ChangeClass.BroadenedAccess and _is_world_open(change.after)
@@ -90,6 +91,7 @@ def compute_blast_radius(change: Change, context: dict | None = None) -> BlastRa
 
 
 def prioritize_changes(changes: list[Change], context: dict | None = None) -> list[PrioritizedChange]:
+    """Filter, rank, and sort changes by blast radius score, excluding Neutral and Other classes."""
     results = []
     for change in changes:
         cc = classify_change(change)

@@ -65,6 +65,7 @@ def _parse_ts(value: str | datetime) -> datetime:
 # ---------------------------------------------------------------------------
 
 def load_iam_policies(data: dict) -> list[IamPolicy]:
+    """Parse IAM policy records from the export envelope into IamPolicy objects."""
     out: list[IamPolicy] = []
     for record in data.get("iam_policies", []):
         bindings = [
@@ -80,6 +81,7 @@ def load_iam_policies(data: dict) -> list[IamPolicy]:
 
 
 def load_vpc_firewall_rules(data: dict) -> list[VpcFirewallRule]:
+    """Parse VPC firewall rule records from the export envelope into VpcFirewallRule objects."""
     out: list[VpcFirewallRule] = []
     for record in data.get("vpc_firewall_rules", []):
         log_cfg = record.get("logConfig", {})
@@ -101,6 +103,7 @@ def load_vpc_firewall_rules(data: dict) -> list[VpcFirewallRule]:
 
 
 def load_network_firewall_policies(data: dict) -> list[NetworkFirewallPolicy]:
+    """Parse network firewall policy records from the export envelope into NetworkFirewallPolicy objects."""
     out: list[NetworkFirewallPolicy] = []
     for record in data.get("network_firewall_policies", []):
         out.append(NetworkFirewallPolicy(
@@ -118,6 +121,7 @@ def load_audit_changes(
     start: datetime | None = None,
     end: datetime | None = None,
 ) -> list[Change]:
+    """Parse audit change records from the export envelope, filtering by type and time window."""
     # Convert naive start/end to UTC
     utc_start = _parse_ts(start) if start is not None else None
     utc_end   = _parse_ts(end)   if end   is not None else None

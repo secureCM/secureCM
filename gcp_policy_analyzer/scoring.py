@@ -82,6 +82,7 @@ def _all_ports(entries: list[dict]) -> bool:
 # ---------------------------------------------------------------------------
 
 def score_rule_exposure(rule) -> ExposureScore:
+    """Score a firewall rule's network exposure based on source ranges, ports, logging, and priority."""
     source_ranges: list[str] = _attr(rule, "source_ranges", [])
     allowed: list[dict] = _attr(rule, "allowed", [])
     denied: list[dict] = _attr(rule, "denied", [])
@@ -123,6 +124,7 @@ def score_rule_exposure(rule) -> ExposureScore:
 # ---------------------------------------------------------------------------
 
 def score_iam_binding(binding, *, high_privilege_roles: frozenset[str] | None = None, toxic_combinations: frozenset[str] | None = None) -> RiskScore:
+    """Score an IAM binding for high-privilege roles, service account members, and toxic combinations."""
     roles = high_privilege_roles if high_privilege_roles is not None else HIGH_PRIVILEGE_ROLES
     toxic_roles = toxic_combinations if toxic_combinations is not None else TOXIC_COMBINATIONS
     role: str = _attr(binding, "role", "")
@@ -148,6 +150,7 @@ def _has_world_range(ranges: list[str]) -> bool:
 
 
 def classify_change(change) -> ChangeClass:
+    """Classify a policy change as BroadenedAccess, RemovedProtection, ShadowCreated, LeastPrivilegeImproved, Neutral, or Other."""
     action: str = _attr(change, "action", "")
     before: dict | None = _attr(change, "before")
     after: dict | None = _attr(change, "after")
