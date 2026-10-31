@@ -1,3 +1,4 @@
+import ipaddress
 from datetime import datetime, timezone
 
 from gcp_policy_analyzer.diff import Change
@@ -129,6 +130,7 @@ def correlate_by_actor(
     *,
     anomaly_threshold: float = 0.25,
     min_events_for_anomaly: int = 3,
+    subnet_bits: int | None = None,
 ) -> dict:
     """
     Group all activity by principal and surface cross-source correlation signals
@@ -210,4 +212,40 @@ def correlate_by_actor(
         ip: sorted(acts) for ip, acts in ip_actors.items() if len(acts) > 1
     }
 
-    return {"actors": actors, "shared_ips": shared_ips}
+    result: dict = {"actors": actors, "shared_ips": shared_ips}
+
+    if subnet_bits is not None:
+        # Map each actor's IPs to /subnet_bits CIDRs; ignore non-IPv4 / unparseable
+        def _mask(ip_str: str) -> str | None:
+            try:
+                addr = ipaddress.ip_address(ip_str)
+                if addr.version != 4:
+                    return None
+                net = ipaddress.ip_network(f"{ip_str}/{subnet_bits}", strict=False)
+                return str(net)
+            except ValueError:
+                return None
+
+        subnet_actors: dict[str, set[str]] = {}  # cidr -> {actors}
+        actor_subnets: dict[str, set[str]] = {}  # actor -> {cidrs}
+        for actor in all_actors:
+            for ip in ip_counts.get(actor, {}):
+                cidr = _mask(ip)
+                if cidr is None:
+                    continue
+                subnet_actors.setdefault(cidr, set()).add(actor)
+                actor_subnets.setdefault(actor, set()).add(cidr)
+
+        shared_subnets = {
+            cidr: sorted(acts) for cidr, acts in subnet_actors.items() if len(acts) > 1
+        }
+        result["shared_subnets"] = shared_subnets
+
+        # Attach anomalous_subnets per actor: subnets shared with other actors
+        for actor_entry in result["actors"]:
+            a = actor_entry["actor"]
+            my_subnets = actor_subnets.get(a, set())
+            anomalous = sorted(c for c in my_subnets if c in shared_subnets)
+            actor_entry["anomalous_subnets"] = anomalous
+
+    return result

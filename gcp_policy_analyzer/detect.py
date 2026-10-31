@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from gcp_policy_analyzer.helpers import is_production, is_service_account
+from gcp_policy_analyzer.loaders import _parse_ts
 from gcp_policy_analyzer.scoring import classify_change, ChangeClass, score_iam_binding, HIGH_PRIVILEGE_ROLES
 
 _WORLD_RANGES: frozenset[str] = frozenset({"0.0.0.0/0", "::/0"})
@@ -285,3 +286,228 @@ def detect_privilege_grant(
                 ))
 
     return findings
+
+
+# ---------------------------------------------------------------------------
+# IAM/firewall resource patterns for discovery burst detection
+# ---------------------------------------------------------------------------
+_DISCOVERY_RESOURCES = ("iam", "firewall", "firewalls", "policies", "serviceaccounts",
+                        "iampolicies", "roles", "groups", "permissions")
+_GROUP_PERM_RESOURCES = ("groups", "permissions")
+
+
+def _is_discovery_method(method: str) -> bool:
+    m = method.lower()
+    return ".list" in m or ".get" in m
+
+
+def _is_iam_or_firewall(resource: str) -> bool:
+    r = resource.lower()
+    return any(kw in r for kw in _DISCOVERY_RESOURCES)
+
+
+def _is_group_perm(resource: str) -> bool:
+    r = resource.lower()
+    return any(kw in r for kw in _GROUP_PERM_RESOURCES)
+
+
+def _parse_log_ts(entry: dict) -> datetime | None:
+    ts = entry.get("timestamp")
+    if not ts:
+        return None
+    try:
+        return _parse_ts(ts)
+    except Exception:
+        return None
+
+
+def detect_discovery_bursts(
+    logs: list,
+    *,
+    window_seconds: int = 300,
+    min_calls: int = 10,
+) -> list[Finding]:
+    """Detect T1580 / T1069.003 from discovery bursts on IAM/firewall resources.
+
+    A principal making ≥min_calls list/get calls on IAM/firewall resources within
+    any window_seconds sliding window triggers T1580; if the targeted resource
+    contains groups/permissions → T1069.003.
+    """
+    # Group qualifying events per principal
+    from collections import defaultdict
+    by_principal: dict[str, list[tuple[datetime, dict]]] = defaultdict(list)
+
+    for entry in logs:
+        method = entry.get("methodName", "")
+        resource = entry.get("resourceName", "") or entry.get("resource", "")
+        if not (_is_discovery_method(method) and _is_iam_or_firewall(resource)):
+            continue
+        ts = _parse_log_ts(entry)
+        if ts is None:
+            continue
+        actor = entry.get("principalEmail", "")
+        if actor:
+            by_principal[actor].append((ts, entry))
+
+    findings: list[Finding] = []
+    for actor, events in by_principal.items():
+        events.sort(key=lambda e: e[0])  # deterministic ascending
+        timestamps = [e[0] for e in events]
+        n = len(timestamps)
+        # Sliding window: two-pointer
+        left = 0
+        for right in range(n):
+            while (timestamps[right] - timestamps[left]).total_seconds() > window_seconds:
+                left += 1
+            window_size = right - left + 1
+            if window_size >= min_calls:
+                # Determine technique based on resource name
+                window_events = events[left:right + 1]
+                any_group_perm = any(_is_group_perm(e.get("resourceName", "")) for _, e in window_events)
+                technique_id = "T1069.003" if any_group_perm else "T1580"
+                technique_name = (
+                    "Cloud Groups" if technique_id == "T1069.003"
+                    else "Cloud Infrastructure Discovery"
+                )
+                tactic = "discovery"
+                findings.append(Finding(
+                    technique_id=technique_id,
+                    technique_name=technique_name,
+                    tactic=tactic,
+                    severity="medium",
+                    resource=window_events[0][1].get("resourceName", ""),
+                    principal=actor,
+                    timestamp=timestamps[left],
+                    evidence={
+                        "window_start": timestamps[left].isoformat(),
+                        "window_end": timestamps[right].isoformat(),
+                        "call_count": window_size,
+                    },
+                ))
+                # ponytail: emit one Finding per actor per burst start; advance left past it
+                left = right + 1
+                break  # one finding per actor; re-run outer loop handles additional bursts
+
+    return findings
+
+
+def detect_anomalous_actor(changes: list, logs: list) -> list[Finding]:
+    """Detect T1078.004 from principals acting from external or rotating-subnet IPs.
+
+    Calls correlate_by_actor(subnet_bits=24) to find anomalous or shared-subnet IPs,
+    then emits a Finding per principal that has such an IP tied to an in-scope change/log.
+    """
+    from gcp_policy_analyzer.logs import correlate_by_actor
+
+    result = correlate_by_actor(changes, logs, subnet_bits=24)
+
+    # Build set of principals that appear in changes or logs
+    principals_in_scope: set[str] = set()
+    for change in changes:
+        p = change.principal if hasattr(change, "principal") else change.get("principal", "")
+        if p:
+            principals_in_scope.add(p)
+    for entry in logs:
+        p = entry.get("principalEmail", "")
+        if p:
+            principals_in_scope.add(p)
+
+    findings: list[Finding] = []
+    for actor_info in result["actors"]:
+        actor = actor_info["actor"]
+        if actor not in principals_in_scope:
+            continue
+        anomalous_ips = actor_info.get("anomalous_ips", [])
+        anomalous_subnets = actor_info.get("anomalous_subnets", [])
+        if not anomalous_ips and not anomalous_subnets:
+            continue
+        findings.append(Finding(
+            technique_id="T1078.004",
+            technique_name="Valid Accounts: Cloud Accounts",
+            tactic="defense-evasion",
+            severity="high",
+            resource="",  # no single resource; evidence carries details
+            principal=actor,
+            timestamp=None,
+            evidence={
+                "anomalous_ips": anomalous_ips,
+                "anomalous_subnets": anomalous_subnets,
+            },
+        ))
+
+    return findings
+
+
+def _parse_project(resource: str) -> str:
+    """Extract project/scope from a resource path.
+
+    "projects/X/..." → "X"
+    "folders/N/..." → "folders/N"
+    "organizations/N/..." → "organizations/N"
+    """
+    parts = resource.split("/")
+    if not parts:
+        return ""
+    if parts[0] == "projects" and len(parts) >= 2:
+        return parts[1]
+    if parts[0] in ("folders", "organizations") and len(parts) >= 2:
+        return f"{parts[0]}/{parts[1]}"
+    return parts[0]
+
+
+def cross_project_timeline(
+    changes: list,
+    logs: list,
+    *,
+    principal: str | None = None,
+) -> list[dict]:
+    """Merge changes + logs, optionally filtered to one principal, sorted by timestamp.
+
+    Each item: {"ts": datetime, "project": str, "kind": "change"|"log", "resource": str, "detail": dict}
+    """
+    items: list[dict] = []
+
+    for change in changes:
+        if hasattr(change, "principal"):
+            p = change.principal
+            resource = change.resource
+            ts = change.timestamp
+            action = change.action
+        else:
+            p = change.get("principal", "")
+            resource = change.get("resource", "")
+            ts = change.get("timestamp")
+            action = change.get("action", "")
+        if principal is not None and p != principal:
+            continue
+        if ts is None:
+            continue
+        ts_dt = _parse_ts(ts) if not isinstance(ts, datetime) else ts
+        items.append({
+            "ts": ts_dt,
+            "project": _parse_project(resource),
+            "kind": "change",
+            "resource": resource,
+            "detail": {"action": action, "principal": p},
+        })
+
+    for entry in logs:
+        p = entry.get("principalEmail", "")
+        if principal is not None and p != principal:
+            continue
+        resource = entry.get("resourceName", "") or entry.get("resource", "")
+        ts_raw = entry.get("timestamp")
+        if not ts_raw:
+            continue
+        ts_dt = _parse_ts(ts_raw)
+        items.append({
+            "ts": ts_dt,
+            "project": _parse_project(resource),
+            "kind": "log",
+            "resource": resource,
+            "detail": {"method": entry.get("methodName", ""), "principal": p},
+        })
+
+    # Sort ascending by ts; tiebreak by (kind, resource) for determinism
+    items.sort(key=lambda x: (x["ts"], x["kind"], x["resource"]))
+    return items
