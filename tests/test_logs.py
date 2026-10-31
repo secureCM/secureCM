@@ -45,6 +45,14 @@ class TestLogsModule(unittest.TestCase):
         self.assertEqual(len(window_entries), 1)
         self.assertEqual(window_entries[0]["timestamp"], "2026-10-30T16:22:41Z")
 
+        # Filter by methods
+        methods_entries = filter_log_entries(
+            entries,
+            methods=["v1.compute.firewalls.patch"]
+        )
+        self.assertEqual(len(methods_entries), 1)
+        self.assertEqual(methods_entries[0]["methodName"], "v1.compute.firewalls.patch")
+
     def test_correlate_attaches_matching_entry(self):
         """Test correlate_changes_with_logs attaches evidence to matching changes."""
         _, correlate_changes_with_logs = self._import_logs()
@@ -94,6 +102,41 @@ class TestLogsModule(unittest.TestCase):
         self.assertGreater(len(iam_changes), 0)
         for result in iam_changes:
             self.assertEqual(len(result["evidence"]), 0)
+
+    def test_filter_skips_missing_timestamps(self):
+        """Test that entries with missing or empty timestamps are skipped in windowed filters."""
+        filter_log_entries, _ = self._import_logs()
+
+        # Create entries, some with missing/empty timestamps
+        entries = [
+            {
+                "methodName": "v1.compute.firewalls.patch",
+                "principalEmail": "user@example.com",
+                "timestamp": "2026-10-30T16:22:41Z",
+                "resourceName": "projects/p/global/firewalls/rule1"
+            },
+            {
+                "methodName": "v1.compute.firewalls.patch",
+                "principalEmail": "user@example.com",
+                "timestamp": "",  # empty timestamp
+                "resourceName": "projects/p/global/firewalls/rule2"
+            },
+            {
+                "methodName": "v1.compute.firewalls.patch",
+                "principalEmail": "user@example.com",
+                # missing timestamp key
+                "resourceName": "projects/p/global/firewalls/rule3"
+            }
+        ]
+
+        # Filter with time window
+        start = datetime(2026, 10, 30, 16, 22, 0, tzinfo=timezone.utc)
+        end = datetime(2026, 10, 30, 16, 23, 0, tzinfo=timezone.utc)
+        result = filter_log_entries(entries, start=start, end=end)
+
+        # Only the entry with valid timestamp should pass
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["resourceName"], "projects/p/global/firewalls/rule1")
 
     def test_correlate_matching_rules(self):
         """Test the specific matching rules for evidence correlation."""
@@ -159,6 +202,64 @@ class TestLogsModule(unittest.TestCase):
         result = results[0]
         self.assertEqual(len(result["evidence"]), 1)
         self.assertEqual(result["evidence"][0]["timestamp"], "2026-10-30T16:22:41Z")
+
+    def test_correlate_suffix_boundary_match(self):
+        """Test that suffix matching respects segment boundaries."""
+        _, correlate_changes_with_logs = self._import_logs()
+
+        from gcp_policy_analyzer.diff import Change
+        from gcp_policy_analyzer.loaders import _parse_ts
+
+        change_time = _parse_ts("2026-10-30T16:22:41Z")
+        # Change resource ends with "firewalls/allow-x"
+        change = Change(
+            resource="projects/p/global/firewalls/allow-x",
+            resource_type="firewall_rule",
+            action="UPDATE",
+            before={},
+            after={},
+            timestamp=change_time,
+            principal="user@example.com",
+            labels={}
+        )
+
+        # Entry with correct boundary-aware match
+        correct = {
+            "methodName": "v1.compute.firewalls.patch",
+            "principalEmail": "user@example.com",
+            "timestamp": "2026-10-30T16:22:41Z",
+            "resourceName": "projects/p/global/firewalls/allow-x"
+        }
+
+        # Entry with correct last 2 segments via "/" boundary
+        correct_nested = {
+            "methodName": "v1.compute.firewalls.patch",
+            "principalEmail": "user@example.com",
+            "timestamp": "2026-10-30T16:22:41Z",
+            "resourceName": "projects/other-project/zones/us-central1-a/firewalls/allow-x"
+        }
+
+        # Entry with false-positive suffix match (crosses segment boundary)
+        # "sillyfirewalls/allow-x" ends with "firewalls/allow-x" but wrong boundary
+        false_positive = {
+            "methodName": "v1.compute.firewalls.patch",
+            "principalEmail": "user@example.com",
+            "timestamp": "2026-10-30T16:22:41Z",
+            "resourceName": "projects/p/global/sillyfirewalls/allow-x"
+        }
+
+        entries = [correct, correct_nested, false_positive]
+        results = correlate_changes_with_logs([change], entries)
+
+        self.assertEqual(len(results), 1)
+        result = results[0]
+        # Only correct and correct_nested should match, not false_positive
+        self.assertEqual(len(result["evidence"]), 2)
+        evidence_resources = {e["resourceName"] for e in result["evidence"]}
+        self.assertEqual(evidence_resources, {
+            "projects/p/global/firewalls/allow-x",
+            "projects/other-project/zones/us-central1-a/firewalls/allow-x"
+        })
 
 
 if __name__ == "__main__":

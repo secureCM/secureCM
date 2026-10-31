@@ -38,7 +38,11 @@ def filter_log_entries(
 
         # Filter by time window
         if start is not None or end is not None:
-            entry_ts = _parse_ts(entry.get("timestamp", ""))
+            # Skip entries with missing or empty timestamp
+            timestamp_str = entry.get("timestamp", "")
+            if not timestamp_str:
+                continue
+            entry_ts = _parse_ts(timestamp_str)
             if start is not None and entry_ts < start:
                 continue
             if end is not None and entry_ts > end:
@@ -89,13 +93,19 @@ def correlate_changes_with_logs(
             if entry.get("principalEmail") != change.principal:
                 continue
 
-            # Check resource match (last 2 segments)
+            # Check resource match: boundary-aware suffix matching to avoid false positives
+            # e.g., "sillyfirewalls/allow-x" should NOT match suffix "firewalls/allow-x"
             resource_name = entry.get("resourceName", "")
-            if not resource_name.endswith(resource_suffix):
+            if not (resource_name == resource_suffix or resource_name.endswith("/" + resource_suffix)):
+                continue
+
+            # Skip entries with missing or empty timestamp
+            timestamp_str = entry.get("timestamp", "")
+            if not timestamp_str:
                 continue
 
             # Check timestamp match (within 300 seconds)
-            entry_ts = _parse_ts(entry.get("timestamp", ""))
+            entry_ts = _parse_ts(timestamp_str)
             time_delta = abs((entry_ts - change.timestamp).total_seconds())
             if time_delta > 300:
                 continue

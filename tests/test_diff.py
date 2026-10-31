@@ -82,7 +82,7 @@ class TestDiffPolicies(unittest.TestCase):
         diff_policies = self._diff_policies()
 
         rules = copy.deepcopy(self.data["vpc_firewall_rules"])
-        changes = diff_policies(rules, rules, "firewall_rule")
+        changes = diff_policies(rules, copy.deepcopy(rules), "firewall_rule")
 
         self.assertEqual(len(changes), 0)
 
