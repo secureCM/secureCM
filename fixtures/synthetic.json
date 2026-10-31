@@ -1,0 +1,188 @@
+{
+  "iam_policies": [
+    {
+      "resource": "projects/example-prod-project",
+      "bindings": [
+        {
+          "role": "roles/editor",
+          "members": [
+            "serviceAccount:terraform-deployer@example-prod-project.iam.gserviceaccount.com"
+          ]
+        },
+        {
+          "role": "roles/owner",
+          "members": [
+            "serviceAccount:sa-demo@example-prod-project.iam.gserviceaccount.com"
+          ]
+        }
+      ]
+    }
+  ],
+  "firewall_rules": [
+    {
+      "name": "prod-allow-all-ingress",
+      "network": "projects/example-prod-project/global/networks/prod-network",
+      "direction": "INGRESS",
+      "priority": 1000,
+      "action": "ALLOW",
+      "sourceRanges": ["0.0.0.0/0"],
+      "destinationRanges": [],
+      "labels": {
+        "env": "prod"
+      },
+      "project": "example-prod-project"
+    },
+    {
+      "name": "prod-deny-all-egress",
+      "network": "projects/example-prod-project/global/networks/prod-network",
+      "direction": "EGRESS",
+      "priority": 65534,
+      "action": "DENY",
+      "sourceRanges": [],
+      "destinationRanges": ["0.0.0.0/0"],
+      "labels": {
+        "env": "prod"
+      },
+      "project": "example-prod-project"
+    }
+  ],
+  "network_firewall_policies": [
+    {
+      "name": "prod-network-policy",
+      "project": "example-prod-project",
+      "rules": [
+        {
+          "priority": 1000,
+          "direction": "INGRESS",
+          "action": "allow",
+          "match": {
+            "srcIpRanges": ["10.0.0.0/8"]
+          }
+        }
+      ]
+    }
+  ],
+  "audit_changes": [
+    {
+      "change_id": "chg-001",
+      "resource_name": "projects/example-prod-project/global/firewalls/prod-allow-all-ingress",
+      "resource_type": "firewall_rule",
+      "operation": "UPDATE",
+      "principal": "terraform-deployer@example-prod-project.iam.gserviceaccount.com",
+      "timestamp": "2026-10-30T16:22:41Z",
+      "caller_ip": "203.0.113.10",
+      "before": {
+        "sourceRanges": ["10.0.0.0/8"]
+      },
+      "after": {
+        "sourceRanges": ["0.0.0.0/0"]
+      },
+      "labels": {
+        "env": "prod"
+      }
+    },
+    {
+      "change_id": "chg-002",
+      "resource_name": "projects/example-prod-project/global/firewalls/prod-deny-all-egress",
+      "resource_type": "firewall_rule",
+      "operation": "DELETE",
+      "principal": "terraform-deployer@example-prod-project.iam.gserviceaccount.com",
+      "timestamp": "2026-10-30T16:23:05Z",
+      "caller_ip": "203.0.113.10",
+      "before": {
+        "direction": "EGRESS",
+        "action": "DENY",
+        "destinationRanges": ["0.0.0.0/0"]
+      },
+      "after": {},
+      "labels": {
+        "env": "prod"
+      }
+    },
+    {
+      "change_id": "chg-003",
+      "resource_name": "projects/example-prod-project",
+      "resource_type": "iam_policy",
+      "operation": "UPDATE",
+      "principal": "terraform-deployer@example-prod-project.iam.gserviceaccount.com",
+      "timestamp": "2026-10-27T09:15:00Z",
+      "caller_ip": "203.0.113.10",
+      "before": {
+        "bindings": []
+      },
+      "after": {
+        "bindings": [
+          {
+            "role": "roles/owner",
+            "members": ["serviceAccount:sa-demo@example-prod-project.iam.gserviceaccount.com"]
+          }
+        ]
+      },
+      "labels": {}
+    },
+    {
+      "change_id": "chg-004",
+      "resource_name": "projects/example-prod-project/global/firewalls/prod-allow-all-ingress",
+      "resource_type": "firewall_rule",
+      "operation": "UPDATE",
+      "principal": "alice@example.com",
+      "timestamp": "2026-10-30T11:02:10Z",
+      "caller_ip": "198.51.100.5",
+      "before": {
+        "description": ""
+      },
+      "after": {
+        "description": "Updated description only"
+      },
+      "labels": {}
+    },
+    {
+      "change_id": "chg-005",
+      "resource_name": "projects/example-prod-project/global/firewalls/old-rule",
+      "resource_type": "firewall_rule",
+      "operation": "UPDATE",
+      "principal": "alice@example.com",
+      "timestamp": "2026-10-21T08:00:00Z",
+      "caller_ip": "198.51.100.5",
+      "before": {
+        "priority": 900
+      },
+      "after": {
+        "priority": 1000
+      },
+      "labels": {}
+    }
+  ],
+  "log_entries": [
+    {
+      "methodName": "v1.compute.firewalls.patch",
+      "principalEmail": "terraform-deployer@example-prod-project.iam.gserviceaccount.com",
+      "callerIp": "203.0.113.10",
+      "timestamp": "2026-10-30T16:22:41Z",
+      "resourceName": "projects/example-prod-project/global/firewalls/prod-allow-all-ingress"
+    },
+    {
+      "methodName": "v1.compute.firewalls.delete",
+      "principalEmail": "terraform-deployer@example-prod-project.iam.gserviceaccount.com",
+      "callerIp": "203.0.113.10",
+      "timestamp": "2026-10-30T16:23:05Z",
+      "resourceName": "projects/example-prod-project/global/firewalls/prod-deny-all-egress"
+    }
+  ],
+  "resources": [
+    {"name": "instance-001", "network": "prod-network", "project": "example-prod-project"},
+    {"name": "instance-002", "network": "prod-network", "project": "example-prod-project"},
+    {"name": "instance-003", "network": "prod-network", "project": "example-prod-project"},
+    {"name": "instance-004", "network": "prod-network", "project": "example-prod-project"},
+    {"name": "instance-005", "network": "prod-network", "project": "example-prod-project"},
+    {"name": "instance-006", "network": "prod-network", "project": "example-prod-project"},
+    {"name": "instance-007", "network": "prod-network", "project": "example-prod-project"},
+    {"name": "subnet-001", "network": "prod-network", "project": "example-prod-project"},
+    {"name": "subnet-002", "network": "prod-network", "project": "example-prod-project"},
+    {"name": "subnet-003", "network": "prod-network", "project": "example-prod-project"},
+    {"name": "subnet-004", "network": "prod-network", "project": "example-prod-project"},
+    {"name": "subnet-005", "network": "prod-network", "project": "example-prod-project"},
+    {"name": "subnet-006", "network": "prod-network", "project": "example-prod-project"},
+    {"name": "subnet-007", "network": "prod-network", "project": "example-prod-project"}
+  ]
+}
