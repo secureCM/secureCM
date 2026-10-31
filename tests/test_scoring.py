@@ -116,6 +116,22 @@ class TestScoreIamBinding(unittest.TestCase):
         self.assertFalse(result.is_high_privilege)
         self.assertFalse(result.toxic_combination)
 
+    def test_toxic_combinations_override(self):
+        """Custom toxic_combinations parameter overrides module default."""
+        from gcp_policy_analyzer.loaders import IamBinding
+        binding = IamBinding(
+            role="roles/owner",  # not in default TOXIC_COMBINATIONS
+            members=["serviceAccount:sa@project.iam.gserviceaccount.com"],
+        )
+        # Default: not toxic
+        result_default = score_iam_binding(binding)
+        self.assertFalse(result_default.toxic_combination)
+
+        # With custom set including roles/owner
+        custom_toxic = frozenset({"roles/owner"})
+        result_custom = score_iam_binding(binding, toxic_combinations=custom_toxic)
+        self.assertTrue(result_custom.toxic_combination)
+
 
 class TestClassifyChange(unittest.TestCase):
     def setUp(self):
@@ -153,3 +169,16 @@ class TestClassifyChange(unittest.TestCase):
             and ch.after == {"description": "Updated description only"}
         )
         self.assertEqual(classify_change(c), ChangeClass.Neutral)
+
+    def test_classify_empty_diff_other(self):
+        """Empty before and after (both empty dicts) classifies as Other."""
+        c = Change(
+            resource="projects/test/global/firewalls/rule",
+            resource_type="firewall_rule",
+            action="UPDATE",
+            before={},
+            after={},
+            timestamp=_ts("2025-01-01T00:00:00Z"),
+            principal="user:test@example.com",
+        )
+        self.assertEqual(classify_change(c), ChangeClass.Other)

@@ -122,14 +122,15 @@ def score_rule_exposure(rule) -> ExposureScore:
 # score_iam_binding
 # ---------------------------------------------------------------------------
 
-def score_iam_binding(binding, *, high_privilege_roles: frozenset[str] | None = None) -> RiskScore:
+def score_iam_binding(binding, *, high_privilege_roles: frozenset[str] | None = None, toxic_combinations: frozenset[str] | None = None) -> RiskScore:
     roles = high_privilege_roles if high_privilege_roles is not None else HIGH_PRIVILEGE_ROLES
+    toxic_roles = toxic_combinations if toxic_combinations is not None else TOXIC_COMBINATIONS
     role: str = _attr(binding, "role", "")
     members: list[str] = _attr(binding, "members", [])
 
     high_priv = role in roles
     sa_member = any(is_service_account(m) for m in members)
-    toxic = role in TOXIC_COMBINATIONS and sa_member
+    toxic = role in toxic_roles and sa_member
 
     return RiskScore(
         is_high_privilege=high_priv,
@@ -201,6 +202,10 @@ def classify_change(change) -> ChangeClass:
     # LeastPrivilegeImproved: ranges narrowed (had world, now doesn't)
     if before_ranges and _has_world_range(before_ranges) and after_ranges and not _has_world_range(after_ranges):
         return ChangeClass.LeastPrivilegeImproved
+
+    # Empty-diff (both empty): classify as Other
+    if not b and not a:
+        return ChangeClass.Other
 
     # Neutral: before/after differ only in description
     b_keys = set(b.keys())
