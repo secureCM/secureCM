@@ -71,6 +71,28 @@ class TestDetectPrivilegeGrant(unittest.TestCase):
         tech_ids = {f.technique_id for f in findings}
         self.assertIn("T1098", tech_ids)
 
+    def test_lookalike_domain_flags_T1199(self):
+        # attacker@evilacme.example.com ends with "acme.example.com" but is NOT internal — must fire T1199
+        change = _change(
+            "projects/my-proj",
+            before_bindings=[],
+            after_bindings=[{"role": "roles/viewer", "members": ["user:attacker@evilacme.example.com"]}],
+        )
+        findings = detect_privilege_grant([], [change], corp_domains=("acme.example.com",))
+        tech_ids = {f.technique_id for f in findings}
+        self.assertIn("T1199", tech_ids)
+
+    def test_real_corp_member_not_flagged_T1199(self):
+        # user:real@acme.example.com IS internal — must NOT fire T1199
+        change = _change(
+            "projects/my-proj",
+            before_bindings=[],
+            after_bindings=[{"role": "roles/viewer", "members": ["user:real@acme.example.com"]}],
+        )
+        findings = detect_privilege_grant([], [change])
+        tech_ids = {f.technique_id for f in findings}
+        self.assertNotIn("T1199", tech_ids)
+
     def test_noop_regrant_not_flagged(self):
         # after == before — no new (role, member) pairs added
         bindings = [{"role": "roles/owner", "members": ["user:alice@acme.example.com"]}]
@@ -80,6 +102,21 @@ class TestDetectPrivilegeGrant(unittest.TestCase):
 
     def test_partial_envelope_empty(self):
         self.assertEqual(detect_privilege_grant([], []), [])
+        # change with before=None and after=None must not raise
+        from gcp_policy_analyzer.diff import Change
+        null_change = Change(
+            resource="projects/x", resource_type="iam_policy", action="UPDATE",
+            before=None, after=None, timestamp=None, principal="",
+        )
+        self.assertEqual(detect_privilege_grant([], [null_change]), [])
+        # non-UPDATE action yields no finding
+        create_change = Change(
+            resource="projects/x", resource_type="iam_policy", action="CREATE",
+            before=None,
+            after={"bindings": [{"role": "roles/owner", "members": ["user:bob@acme.example.com"]}]},
+            timestamp=_TS, principal="admin@acme.example.com",
+        )
+        self.assertEqual(detect_privilege_grant([], [create_change]), [])
 
 
 if __name__ == "__main__":

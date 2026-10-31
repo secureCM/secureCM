@@ -248,10 +248,11 @@ def detect_privilege_grant(
                     ))
 
                 # --- T1199: external identity grant ---
+                # ponytail: strip prefix (e.g. "user:") then require exact "@domain" suffix
+                # — bare endswith(d) would match lookalikes like attacker@evilacme.example.com
+                _email = member.split(":", 1)[1] if ":" in member else member
                 if not is_service_account(member) and not any(
-                    member.endswith(d) or member.endswith("@" + d)
-                    or (":" in member and member.split(":", 1)[1].endswith("@" + d))
-                    for d in corp_domains
+                    _email.endswith("@" + d) for d in corp_domains
                 ):
                     sev = "high"
                     if cascade:
