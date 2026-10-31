@@ -26,7 +26,7 @@ class ExecutionResult:
 def run_script(code: str, *, timeout: int = 60, audit_log: str | None = None) -> ExecutionResult:
     """Run `code` in a clean subprocess; log verbatim to audit file first."""
     if audit_log is None:
-        audit_log = os.path.join(_REPO_ROOT, _DEFAULT_AUDIT)
+        audit_log = _DEFAULT_AUDIT  # ponytail: cwd-relative per spec, resolved at call time
 
     # Audit BEFORE execution — requirement
     entry = json.dumps({"ts": datetime.now(timezone.utc).isoformat(), "code": code})
@@ -38,28 +38,36 @@ def run_script(code: str, *, timeout: int = 60, audit_log: str | None = None) ->
         tmppath = tmp.name
 
     try:
-        proc = subprocess.run(
+        proc = subprocess.Popen(
             [sys.executable, tmppath],
-            capture_output=True,
-            timeout=timeout,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             env={"PYTHONPATH": _REPO_ROOT},  # sole entry — clean env, library importable
             cwd=_REPO_ROOT,
             text=True,
         )
-        return ExecutionResult(
-            stdout=proc.stdout,
-            stderr=proc.stderr,
-            returncode=proc.returncode,
-            timed_out=False,
-            code=code,
-        )
-    except subprocess.TimeoutExpired as exc:
-        return ExecutionResult(
-            stdout=exc.stdout or "" if isinstance(exc.stdout, str) else (exc.stdout.decode() if exc.stdout else ""),
-            stderr=exc.stderr or "" if isinstance(exc.stderr, str) else (exc.stderr.decode() if exc.stderr else ""),
-            returncode=-1,
-            timed_out=True,
-            code=code,
-        )
+        try:
+            out, err = proc.communicate(timeout=timeout)
+            return ExecutionResult(
+                stdout=out,
+                stderr=err,
+                returncode=proc.returncode,
+                timed_out=False,
+                code=code,
+            )
+        except subprocess.TimeoutExpired as exc:
+            proc.kill()
+            out, err = proc.communicate()
+            # ponytail: text=True so streams are str; bytes guard for safety
+            return ExecutionResult(
+                stdout=out.decode() if isinstance(out, bytes) else (out or ""),
+                stderr=err.decode() if isinstance(err, bytes) else (err or ""),
+                returncode=-1,
+                timed_out=True,
+                code=code,
+            )
     finally:
-        os.unlink(tmppath)
+        try:
+            os.unlink(tmppath)
+        except OSError:
+            pass

@@ -33,9 +33,24 @@ class TestExecutor(unittest.TestCase):
         self.assertFalse(result.timed_out)
 
     def test_timeout_returns_result(self):
-        result = self._run("while True: pass", timeout=1)
+        # Write a file in a loop; if child stays alive after run_script the file keeps changing.
+        sentinel = os.path.join(self._tmpdir, "tick.txt")
+        code = (
+            "import time, pathlib\n"
+            f"p = pathlib.Path({sentinel!r})\n"
+            "while True:\n"
+            "    p.write_text(str(time.time()))\n"
+            "    time.sleep(0.05)\n"
+        )
+        result = self._run(code, timeout=1)
         self.assertTrue(result.timed_out)
         self.assertEqual(result.returncode, -1)
+        # child must be dead: mtime must stop advancing after run_script returns
+        import time
+        mtime1 = os.path.getmtime(sentinel) if os.path.exists(sentinel) else None
+        time.sleep(0.3)
+        mtime2 = os.path.getmtime(sentinel) if os.path.exists(sentinel) else None
+        self.assertEqual(mtime1, mtime2, "child process still running after timeout")
 
     def test_failing_script_captured(self):
         result = self._run("raise ValueError('boom')")
@@ -67,16 +82,15 @@ class TestExecutor(unittest.TestCase):
         result = self._run(code)
         self.assertEqual(result.code, code)
 
-    def test_default_audit_log_in_repo_root(self):
-        """When audit_log=None, file lands in repo root (cwd of executor)."""
-        import shutil
+    def test_default_audit_log_in_cwd(self):
+        """When audit_log=None, file lands in caller's cwd (cwd-relative)."""
         from codemode import run_script
-        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        default_log = os.path.join(repo_root, "codemode_audit.jsonl")
-        # clean up after
-        self.addCleanup(lambda: os.remove(default_log) if os.path.exists(default_log) else None)
+        orig = os.getcwd()
+        os.chdir(self._tmpdir)
+        self.addCleanup(os.chdir, orig)
         run_script('pass', audit_log=None)
-        self.assertTrue(os.path.exists(default_log))
+        expected = os.path.join(self._tmpdir, "codemode_audit.jsonl")
+        self.assertTrue(os.path.exists(expected))
 
 
 if __name__ == "__main__":
