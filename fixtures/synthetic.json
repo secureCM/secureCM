@@ -2,6 +2,7 @@
   "iam_policies": [
     {
       "resource": "projects/example-prod-project",
+      "labels": {"env": "prod"},
       "bindings": [
         {
           "role": "roles/editor",
@@ -18,38 +19,36 @@
       ]
     }
   ],
-  "firewall_rules": [
+  "vpc_firewall_rules": [
     {
-      "name": "prod-allow-all-ingress",
+      "name": "prod-allow-tcp-8080",
       "network": "projects/example-prod-project/global/networks/prod-network",
       "direction": "INGRESS",
       "priority": 1000,
-      "action": "ALLOW",
       "sourceRanges": ["0.0.0.0/0"],
-      "destinationRanges": [],
-      "labels": {
-        "env": "prod"
-      },
-      "project": "example-prod-project"
+      "allowed": [{"IPProtocol": "tcp", "ports": ["8080"]}],
+      "denied": [],
+      "disabled": false,
+      "logConfig": {"enable": false},
+      "labels": {"env": "prod"}
     },
     {
       "name": "prod-deny-all-egress",
       "network": "projects/example-prod-project/global/networks/prod-network",
       "direction": "EGRESS",
       "priority": 65534,
-      "action": "DENY",
       "sourceRanges": [],
-      "destinationRanges": ["0.0.0.0/0"],
-      "labels": {
-        "env": "prod"
-      },
-      "project": "example-prod-project"
+      "allowed": [],
+      "denied": [{"IPProtocol": "all"}],
+      "disabled": false,
+      "logConfig": {"enable": true},
+      "labels": {"env": "prod"}
     }
   ],
   "network_firewall_policies": [
     {
       "name": "prod-network-policy",
-      "project": "example-prod-project",
+      "region": null,
       "rules": [
         {
           "priority": 1000,
@@ -64,52 +63,32 @@
   ],
   "audit_changes": [
     {
-      "change_id": "chg-001",
-      "resource_name": "projects/example-prod-project/global/firewalls/prod-allow-all-ingress",
+      "resource": "projects/example-prod-project/global/firewalls/prod-allow-tcp-8080",
       "resource_type": "firewall_rule",
-      "operation": "UPDATE",
+      "action": "UPDATE",
       "principal": "terraform-deployer@example-prod-project.iam.gserviceaccount.com",
       "timestamp": "2026-10-30T16:22:41Z",
-      "caller_ip": "203.0.113.10",
-      "before": {
-        "sourceRanges": ["10.0.0.0/8"]
-      },
-      "after": {
-        "sourceRanges": ["0.0.0.0/0"]
-      },
-      "labels": {
-        "env": "prod"
-      }
+      "before": {"sourceRanges": ["10.0.0.0/8"]},
+      "after": {"sourceRanges": ["0.0.0.0/0"]},
+      "labels": {"env": "prod"}
     },
     {
-      "change_id": "chg-002",
-      "resource_name": "projects/example-prod-project/global/firewalls/prod-deny-all-egress",
+      "resource": "projects/example-prod-project/global/firewalls/prod-deny-all-egress",
       "resource_type": "firewall_rule",
-      "operation": "DELETE",
+      "action": "DELETE",
       "principal": "terraform-deployer@example-prod-project.iam.gserviceaccount.com",
       "timestamp": "2026-10-30T16:23:05Z",
-      "caller_ip": "203.0.113.10",
-      "before": {
-        "direction": "EGRESS",
-        "action": "DENY",
-        "destinationRanges": ["0.0.0.0/0"]
-      },
-      "after": {},
-      "labels": {
-        "env": "prod"
-      }
+      "before": {"direction": "EGRESS", "denied": [{"IPProtocol": "all"}]},
+      "after": null,
+      "labels": {"env": "prod"}
     },
     {
-      "change_id": "chg-003",
-      "resource_name": "projects/example-prod-project",
+      "resource": "projects/example-prod-project",
       "resource_type": "iam_policy",
-      "operation": "UPDATE",
+      "action": "UPDATE",
       "principal": "terraform-deployer@example-prod-project.iam.gserviceaccount.com",
       "timestamp": "2026-10-27T09:15:00Z",
-      "caller_ip": "203.0.113.10",
-      "before": {
-        "bindings": []
-      },
+      "before": {"bindings": []},
       "after": {
         "bindings": [
           {
@@ -121,35 +100,23 @@
       "labels": {}
     },
     {
-      "change_id": "chg-004",
-      "resource_name": "projects/example-prod-project/global/firewalls/prod-allow-all-ingress",
+      "resource": "projects/example-prod-project/global/firewalls/prod-allow-tcp-8080",
       "resource_type": "firewall_rule",
-      "operation": "UPDATE",
+      "action": "UPDATE",
       "principal": "alice@example.com",
       "timestamp": "2026-10-30T11:02:10Z",
-      "caller_ip": "198.51.100.5",
-      "before": {
-        "description": ""
-      },
-      "after": {
-        "description": "Updated description only"
-      },
+      "before": {"description": ""},
+      "after": {"description": "Updated description only"},
       "labels": {}
     },
     {
-      "change_id": "chg-005",
-      "resource_name": "projects/example-prod-project/global/firewalls/old-rule",
+      "resource": "projects/example-prod-project/global/firewalls/old-rule",
       "resource_type": "firewall_rule",
-      "operation": "UPDATE",
+      "action": "UPDATE",
       "principal": "alice@example.com",
       "timestamp": "2026-10-21T08:00:00Z",
-      "caller_ip": "198.51.100.5",
-      "before": {
-        "priority": 900
-      },
-      "after": {
-        "priority": 1000
-      },
+      "before": {"priority": 900},
+      "after": {"priority": 1000},
       "labels": {}
     }
   ],
@@ -159,7 +126,7 @@
       "principalEmail": "terraform-deployer@example-prod-project.iam.gserviceaccount.com",
       "callerIp": "203.0.113.10",
       "timestamp": "2026-10-30T16:22:41Z",
-      "resourceName": "projects/example-prod-project/global/firewalls/prod-allow-all-ingress"
+      "resourceName": "projects/example-prod-project/global/firewalls/prod-allow-tcp-8080"
     },
     {
       "methodName": "v1.compute.firewalls.delete",

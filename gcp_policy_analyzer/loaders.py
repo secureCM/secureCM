@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any
 
 from gcp_policy_analyzer.diff import Change
 
@@ -12,7 +11,7 @@ from gcp_policy_analyzer.diff import Change
 # ---------------------------------------------------------------------------
 
 @dataclass
-class Binding:
+class IamBinding:
     role: str
     members: list[str] = field(default_factory=list)
 
@@ -20,7 +19,8 @@ class Binding:
 @dataclass
 class IamPolicy:
     resource: str
-    bindings: list[Binding] = field(default_factory=list)
+    bindings: list[IamBinding]
+    labels: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -29,18 +29,21 @@ class VpcFirewallRule:
     network: str
     direction: str              # "INGRESS" | "EGRESS"
     priority: int
-    action: str                 # "ALLOW" | "DENY"
-    source_ranges: list[str] = field(default_factory=list)
-    destination_ranges: list[str] = field(default_factory=list)
-    labels: dict = field(default_factory=dict)
-    project: str = ""
+    source_ranges: list[str]
+    allowed: list[dict]         # e.g. [{"IPProtocol": "tcp", "ports": ["8080"]}]
+    denied: list[dict]          # e.g. [{"IPProtocol": "all"}]
+    disabled: bool
+    log_enabled: bool
+    labels: dict
+    raw: dict
 
 
 @dataclass
 class NetworkFirewallPolicy:
     name: str
-    project: str
+    region: str | None          # None for global
     rules: list[dict] = field(default_factory=list)
+    raw: dict = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -65,26 +68,34 @@ def load_iam_policies(data: dict) -> list[IamPolicy]:
     out: list[IamPolicy] = []
     for record in data.get("iam_policies", []):
         bindings = [
-            Binding(role=b["role"], members=b.get("members", []))
+            IamBinding(role=b["role"], members=b.get("members", []))
             for b in record.get("bindings", [])
         ]
-        out.append(IamPolicy(resource=record.get("resource", ""), bindings=bindings))
+        out.append(IamPolicy(
+            resource=record.get("resource", ""),
+            bindings=bindings,
+            labels=record.get("labels", {}),
+        ))
     return out
 
 
 def load_vpc_firewall_rules(data: dict) -> list[VpcFirewallRule]:
     out: list[VpcFirewallRule] = []
-    for record in data.get("firewall_rules", []):
+    for record in data.get("vpc_firewall_rules", []):
+        log_cfg = record.get("logConfig", {})
+        log_enabled = log_cfg.get("enable", record.get("log_enabled", False))
         out.append(VpcFirewallRule(
             name=record.get("name", ""),
             network=record.get("network", ""),
             direction=record.get("direction", "INGRESS"),
             priority=record.get("priority", 1000),
-            action=record.get("action", "ALLOW"),
             source_ranges=record.get("sourceRanges", []),
-            destination_ranges=record.get("destinationRanges", []),
+            allowed=record.get("allowed", []),
+            denied=record.get("denied", []),
+            disabled=record.get("disabled", False),
+            log_enabled=bool(log_enabled),
             labels=record.get("labels", {}),
-            project=record.get("project", ""),
+            raw=record,
         ))
     return out
 
@@ -94,8 +105,9 @@ def load_network_firewall_policies(data: dict) -> list[NetworkFirewallPolicy]:
     for record in data.get("network_firewall_policies", []):
         out.append(NetworkFirewallPolicy(
             name=record.get("name", ""),
-            project=record.get("project", ""),
+            region=record.get("region", None),
             rules=record.get("rules", []),
+            raw=record,
         ))
     return out
 
@@ -114,21 +126,22 @@ def load_audit_changes(
     for record in data.get("audit_changes", []):
         if resource_types and record.get("resource_type") not in resource_types:
             continue
+        # I1: skip records missing timestamp rather than raise KeyError
+        if "timestamp" not in record:
+            continue
         ts = _parse_ts(record["timestamp"])
         if utc_start is not None and ts < utc_start:
             continue
         if utc_end is not None and ts > utc_end:
             continue
         out.append(Change(
-            change_id=record.get("change_id", ""),
-            resource_name=record.get("resource_name", ""),
+            resource=record.get("resource", ""),
             resource_type=record.get("resource_type", ""),
-            operation=record.get("operation", ""),
+            action=record.get("action", ""),
             principal=record.get("principal", ""),
             timestamp=ts,
-            caller_ip=record.get("caller_ip", ""),
-            before=record.get("before", {}),
-            after=record.get("after", {}),
+            before=record.get("before"),
+            after=record.get("after"),
             labels=record.get("labels", {}),
         ))
     return out

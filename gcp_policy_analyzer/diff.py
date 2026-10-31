@@ -4,13 +4,12 @@ from datetime import datetime
 
 @dataclass
 class Change:
-    change_id: str
-    resource_name: str
-    resource_type: str          # "firewall_rule" | "iam_policy" | "network_firewall_policy"
-    operation: str              # "CREATE" | "UPDATE" | "DELETE"
+    resource: str
+    resource_type: str            # "firewall_rule" | "iam_policy" | "network_firewall_policy"
+    action: str                   # "CREATE" | "UPDATE" | "DELETE"
+    before: dict | None
+    after: dict | None
+    timestamp: datetime           # always UTC-aware
     principal: str
-    timestamp: datetime         # always UTC-aware
-    caller_ip: str = ""
-    before: dict = field(default_factory=dict)
-    after: dict = field(default_factory=dict)
+    risk_delta: int = 0
     labels: dict = field(default_factory=dict)

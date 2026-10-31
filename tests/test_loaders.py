@@ -27,6 +27,7 @@ class TestLoaders(unittest.TestCase):
         policies = load_iam_policies(self.data)
         self.assertGreaterEqual(len(policies), 1)
         self.assertTrue(policies[0].bindings[0].role.startswith("roles/"))
+        self.assertIsInstance(policies[0].labels, dict)
 
     def test_load_vpc_rules_parses_fields(self):
         _, load_vpc_firewall_rules, *_ = self._loaders()
@@ -34,6 +35,9 @@ class TestLoaders(unittest.TestCase):
         world_open = [r for r in rules if "0.0.0.0/0" in r.source_ranges]
         self.assertTrue(len(world_open) >= 1)
         self.assertIsInstance(world_open[0].labels, dict)
+        self.assertIsInstance(world_open[0].allowed, list)
+        self.assertIsInstance(world_open[0].raw, dict)
+        self.assertIsInstance(world_open[0].disabled, bool)
 
     def test_load_audit_changes_window_filter(self):
         *_, load_audit_changes, _ = self._loaders()
@@ -41,6 +45,8 @@ class TestLoaders(unittest.TestCase):
         start = datetime(2026, 10, 24, 0, 0, 0)   # 7 days before anchor
         end   = datetime(2026, 10, 31, 23, 59, 59)
         changes = load_audit_changes(self.data, start=start, end=end)
+        # fixture has 4 in-window changes (chg-001..004 are within 7 days of anchor)
+        self.assertGreaterEqual(len(changes), 4)
         timestamps = [c.timestamp for c in changes]
         # the 10-day-old change (2026-10-21T08:00:00Z) must be excluded
         for ts in timestamps:
