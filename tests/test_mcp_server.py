@@ -52,6 +52,16 @@ class TestMcpServer(unittest.TestCase):
         self.assertEqual(resp["error"]["code"], -32601)
         self.assertEqual(resp["id"], 5)
 
+    def test_unknown_tool_error(self):
+        resp = self.handle({
+            "jsonrpc": "2.0", "id": 6,
+            "method": "tools/call",
+            "params": {"name": "no_such_tool", "arguments": {}},
+        })
+        self.assertEqual(resp["error"]["code"], -32602)
+        self.assertEqual(resp["id"], 6)
+        self.assertIn("Unknown tool", resp["error"]["message"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -80,7 +80,7 @@ def _call_tool(name: str, args: dict) -> dict:
         else:
             text = result.stdout
     else:
-        return {"error": {"code": -32601, "message": f"Unknown tool: {name}"}}
+        return {"error": {"code": -32602, "message": f"Unknown tool: {name}"}}
     return {"content": [{"type": "text", "text": text}]}
 
 
@@ -89,9 +89,9 @@ def handle_request(req: dict) -> dict | None:
     method = req.get("method", "")
     req_id = req.get("id")  # None for notifications
 
-    # Notifications have no id (or are explicitly notification methods)
-    if "id" not in req or method == "notifications/initialized":
-        return None  # ponytail: notifications never get a response
+    # JSON-RPC 2.0: requests without "id" are notifications and never get a response
+    if "id" not in req:
+        return None
 
     if method == "initialize":
         return _ok(req_id, {
