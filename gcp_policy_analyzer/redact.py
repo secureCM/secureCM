@@ -38,7 +38,6 @@ def register_redactor(fn: Callable[[Any], Any]) -> Callable[[Any], Any]:
 
 def clear_redactors() -> None:
     """Clear all registered custom redactors (for test isolation)."""
-    global _REDACTORS
     _REDACTORS.clear()
 
 
@@ -57,7 +56,7 @@ def redact_sensitive(
     - Strings matching SECRET_PATTERNS (or custom patterns) → "[REDACTED]"
     - Datetimes → isoformat()
     - Dataclasses → asdict first, then recurse
-    - Custom redactors (registered) run after built-ins on outermost object only
+    - Custom redactors (registered) run after built-ins on final walked result
 
     Args:
         obj: Any object (dict, list, dataclass, str, etc.)
@@ -72,11 +71,15 @@ def redact_sensitive(
     if patterns is None:
         patterns = SECRET_PATTERNS
 
-    return _redact_recursive(obj, patterns, salt)
+    result = _redact_recursive(obj, patterns, salt)
+    # Apply registered custom redactors to the final walked result, in order
+    for redactor in _REDACTORS:
+        result = redactor(result)
+    return result
 
 
 def _redact_recursive(obj: Any, patterns: list[re.Pattern], salt: str) -> Any:
-    """Internal recursive walk."""
+    """Internal recursive walk (built-in rules only; custom redactors run after at top level)."""
     # Dataclass → asdict first
     if is_dataclass(obj) and not isinstance(obj, type):
         obj = asdict(obj)
@@ -95,12 +98,6 @@ def _redact_recursive(obj: Any, patterns: list[re.Pattern], salt: str) -> Any:
 
     # String: check SA email, path, secret patterns
     if isinstance(obj, str):
-        # Try custom redactors first (applied to each value during recursion)
-        for redactor in _REDACTORS:
-            result = redactor(obj)
-            if result is not obj:
-                return result
-
         # SA email: local@proj.iam.gserviceaccount.com
         if "@" in obj and ".iam.gserviceaccount.com" in obj:
             if _is_sa_email(obj):
@@ -129,7 +126,7 @@ def _is_sa_email(s: str) -> bool:
     parts = s.split("@")
     if len(parts) == 2:
         local, domain = parts
-        return domain == ".iam.gserviceaccount.com" or ".iam.gserviceaccount.com" in domain
+        return ".iam.gserviceaccount.com" in domain
     return False
 
 

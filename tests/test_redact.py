@@ -47,18 +47,21 @@ class TestRedactSensitive(unittest.TestCase):
         self.assertTrue(result_b["email"].startswith("sa-"))
 
     def test_long_path_shortened(self):
-        """Paths with 4+ segments shortened to last 2."""
+        """Paths with 4+ segments shortened to last 2; <4 segments unchanged."""
         obj = {
-            "long_path": "projects/my-proj/global/firewalls/my-fw",
-            "short_path": "projects/my-proj",
+            "four_segments": "a/b/c/d",  # 4 parts: should shorten
+            "three_segments": "a/b/c",  # 3 parts: should not shorten
+            "five_segments": "projects/my-proj/global/firewalls/my-fw",  # 5 parts: should shorten
         }
 
         result = redact_sensitive(obj)
 
-        # Long path shortened
-        self.assertEqual(result["long_path"], ".../firewalls/my-fw")
-        # Short path unchanged
-        self.assertEqual(result["short_path"], "projects/my-proj")
+        # Boundary: exactly 4 segments should be shortened
+        self.assertEqual(result["four_segments"], ".../c/d")
+        # Boundary: 3 segments should NOT be shortened
+        self.assertEqual(result["three_segments"], "a/b/c")
+        # More than 4 should also shorten
+        self.assertEqual(result["five_segments"], ".../firewalls/my-fw")
 
     def test_secret_string_redacted(self):
         """API keys and private keys redacted to [REDACTED]."""
@@ -105,16 +108,23 @@ class TestRedactSensitive(unittest.TestCase):
         self.assertEqual(result["timestamp"], "2026-10-31T12:00:00+00:00")
 
     def test_register_redactor_runs(self):
-        """Custom redactors registered via decorator are applied."""
+        """Custom redactors are whole-object transformers applied after built-ins."""
 
         @register_redactor
-        def redact_ips(obj):
-            if isinstance(obj, str) and obj == "10.0.0.5":
-                return "10.0.0.0/24"
+        def mask_ips(obj):
+            # Recursively replace "10.0.0.5" anywhere in the object
+            if isinstance(obj, str):
+                return obj.replace("10.0.0.5", "10.0.0.0/24")
+            elif isinstance(obj, dict):
+                return {k: mask_ips(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [mask_ips(item) for item in obj]
             return obj
 
-        result = redact_sensitive({"ip": "10.0.0.5"})
-        self.assertEqual(result["ip"], "10.0.0.0/24")
+        # Test that custom redactor applies to nested values (proves it runs on final walked result)
+        result = redact_sensitive({"servers": [{"ip": "10.0.0.5"}, {"ip": "10.0.0.5"}]})
+        self.assertEqual(result["servers"][0]["ip"], "10.0.0.0/24")
+        self.assertEqual(result["servers"][1]["ip"], "10.0.0.0/24")
 
 
 if __name__ == "__main__":
