@@ -1,0 +1,275 @@
+{
+  "attack_version": "15.1",
+  "techniques": [
+    {
+      "id": "T1098",
+      "name": "Account Manipulation",
+      "tactic": "persistence",
+      "status": "partial",
+      "detector": "detect_privilege_grant",
+      "fixture": "fixtures/incidents/account_manipulation.json",
+      "verified": false,
+      "reason": null
+    },
+    {
+      "id": "T1098.001",
+      "name": "Account Manipulation: Additional Cloud Credentials",
+      "tactic": "persistence",
+      "status": "out-of-scope",
+      "detector": null,
+      "fixture": null,
+      "verified": null,
+      "reason": "surface not ingested: keys/tokens"
+    },
+    {
+      "id": "T1098.003",
+      "name": "Account Manipulation: Additional Cloud Roles",
+      "tactic": "persistence",
+      "status": "covered",
+      "detector": "detect_privilege_grant",
+      "fixture": "fixtures/incidents/additional_cloud_roles.json",
+      "verified": false,
+      "reason": null
+    },
+    {
+      "id": "T1199",
+      "name": "Trusted Relationship",
+      "tactic": "initial-access",
+      "status": "partial",
+      "detector": "detect_privilege_grant",
+      "fixture": "fixtures/incidents/trusted_relationship.json",
+      "verified": false,
+      "reason": null
+    },
+    {
+      "id": "T1530",
+      "name": "Data from Cloud Storage",
+      "tactic": "collection",
+      "status": "out-of-scope",
+      "detector": null,
+      "fixture": null,
+      "verified": null,
+      "reason": "surface not ingested: storage"
+    },
+    {
+      "id": "T1537",
+      "name": "Transfer Data to Cloud Account",
+      "tactic": "exfiltration",
+      "status": "out-of-scope",
+      "detector": null,
+      "fixture": null,
+      "verified": null,
+      "reason": "surface not ingested: storage"
+    },
+    {
+      "id": "T1550.001",
+      "name": "Use Alternate Authentication Material: Application Access Token",
+      "tactic": "defense-evasion",
+      "status": "out-of-scope",
+      "detector": null,
+      "fixture": null,
+      "verified": null,
+      "reason": "surface not ingested: keys/tokens"
+    },
+    {
+      "id": "T1552.005",
+      "name": "Unsecured Credentials: Cloud Instance Metadata API",
+      "tactic": "credential-access",
+      "status": "out-of-scope",
+      "detector": null,
+      "fixture": null,
+      "verified": null,
+      "reason": "surface not ingested: instance metadata"
+    },
+    {
+      "id": "T1562",
+      "name": "Impair Defenses",
+      "tactic": "defense-evasion",
+      "status": "partial",
+      "detector": "detect_firewall_exposure",
+      "fixture": "fixtures/incidents/impair_defenses.json",
+      "verified": false,
+      "reason": null
+    },
+    {
+      "id": "T1562.007",
+      "name": "Impair Defenses: Disable or Modify Cloud Firewall",
+      "tactic": "defense-evasion",
+      "status": "covered",
+      "detector": "detect_firewall_exposure",
+      "fixture": "fixtures/incidents/disable_cloud_firewall.json",
+      "verified": false,
+      "reason": null
+    },
+    {
+      "id": "T1562.008",
+      "name": "Impair Defenses: Disable or Modify Cloud Logs",
+      "tactic": "defense-evasion",
+      "status": "out-of-scope",
+      "detector": null,
+      "fixture": null,
+      "verified": null,
+      "reason": "surface not ingested: logging sink"
+    },
+    {
+      "id": "T1485",
+      "name": "Data Destruction",
+      "tactic": "impact",
+      "status": "partial",
+      "detector": "detect_firewall_exposure",
+      "fixture": "fixtures/incidents/data_destruction.json",
+      "verified": false,
+      "reason": null
+    },
+    {
+      "id": "T1496",
+      "name": "Resource Hijacking",
+      "tactic": "impact",
+      "status": "out-of-scope",
+      "detector": null,
+      "fixture": null,
+      "verified": null,
+      "reason": "surface not ingested: compute"
+    },
+    {
+      "id": "T1578",
+      "name": "Modify Cloud Compute Infrastructure",
+      "tactic": "defense-evasion",
+      "status": "out-of-scope",
+      "detector": null,
+      "fixture": null,
+      "verified": null,
+      "reason": "surface not ingested: compute"
+    },
+    {
+      "id": "T1578.001",
+      "name": "Modify Cloud Compute Infrastructure: Create Snapshot",
+      "tactic": "defense-evasion",
+      "status": "out-of-scope",
+      "detector": null,
+      "fixture": null,
+      "verified": null,
+      "reason": "surface not ingested: compute"
+    },
+    {
+      "id": "T1578.002",
+      "name": "Modify Cloud Compute Infrastructure: Create Cloud Instance",
+      "tactic": "defense-evasion",
+      "status": "out-of-scope",
+      "detector": null,
+      "fixture": null,
+      "verified": null,
+      "reason": "surface not ingested: compute"
+    },
+    {
+      "id": "T1578.003",
+      "name": "Modify Cloud Compute Infrastructure: Delete Cloud Instance",
+      "tactic": "defense-evasion",
+      "status": "out-of-scope",
+      "detector": null,
+      "fixture": null,
+      "verified": null,
+      "reason": "surface not ingested: compute"
+    },
+    {
+      "id": "T1580",
+      "name": "Cloud Infrastructure Discovery",
+      "tactic": "discovery",
+      "status": "partial",
+      "detector": "detect_discovery_bursts",
+      "fixture": "fixtures/incidents/cloud_infra_discovery.json",
+      "verified": false,
+      "reason": null
+    },
+    {
+      "id": "T1069.003",
+      "name": "Permission Groups Discovery: Cloud Groups",
+      "tactic": "discovery",
+      "status": "partial",
+      "detector": "detect_discovery_bursts",
+      "fixture": "fixtures/incidents/cloud_groups_discovery.json",
+      "verified": false,
+      "reason": null
+    },
+    {
+      "id": "T1078.004",
+      "name": "Valid Accounts: Cloud Accounts",
+      "tactic": "defense-evasion",
+      "status": "partial",
+      "detector": "detect_anomalous_actor",
+      "fixture": "fixtures/incidents/cloud_accounts.json",
+      "verified": false,
+      "reason": null
+    },
+    {
+      "id": "T1566",
+      "name": "Phishing",
+      "tactic": "initial-access",
+      "status": "out-of-scope",
+      "detector": null,
+      "fixture": null,
+      "verified": null,
+      "reason": "no telemetry feed"
+    },
+    {
+      "id": "T1621",
+      "name": "Multi-Factor Authentication Request Generation",
+      "tactic": "credential-access",
+      "status": "out-of-scope",
+      "detector": null,
+      "fixture": null,
+      "verified": null,
+      "reason": "no telemetry feed"
+    },
+    {
+      "id": "T1059",
+      "name": "Command and Scripting Interpreter",
+      "tactic": "execution",
+      "status": "out-of-scope",
+      "detector": null,
+      "fixture": null,
+      "verified": null,
+      "reason": "no telemetry feed"
+    },
+    {
+      "id": "T1204",
+      "name": "User Execution",
+      "tactic": "execution",
+      "status": "out-of-scope",
+      "detector": null,
+      "fixture": null,
+      "verified": null,
+      "reason": "no telemetry feed"
+    },
+    {
+      "id": "T1190",
+      "name": "Exploit Public-Facing Application",
+      "tactic": "initial-access",
+      "status": "out-of-scope",
+      "detector": null,
+      "fixture": null,
+      "verified": null,
+      "reason": "no telemetry feed"
+    },
+    {
+      "id": "T1110",
+      "name": "Brute Force",
+      "tactic": "credential-access",
+      "status": "out-of-scope",
+      "detector": null,
+      "fixture": null,
+      "verified": null,
+      "reason": "no telemetry feed"
+    },
+    {
+      "id": "T1486",
+      "name": "Data Encrypted for Impact",
+      "tactic": "impact",
+      "status": "out-of-scope",
+      "detector": null,
+      "fixture": null,
+      "verified": null,
+      "reason": "no telemetry feed"
+    }
+  ]
+}
