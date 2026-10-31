@@ -1,0 +1,30 @@
+{
+  "audit_changes": [
+    {
+      "action": "UPDATE",
+      "after": {
+        "bindings": [
+          {
+            "members": [
+              "user:partner@external-partner.example.com"
+            ],
+            "role": "roles/editor"
+          }
+        ]
+      },
+      "before": {
+        "bindings": []
+      },
+      "labels": {},
+      "principal": "admin@acme.example.com",
+      "resource": "projects/fake-prod-001",
+      "resource_type": "iam_policy",
+      "timestamp": "2026-09-15T00:00:00Z"
+    }
+  ],
+  "iam_policies": [],
+  "log_entries": [],
+  "network_firewall_policies": [],
+  "resources": [],
+  "vpc_firewall_rules": []
+}

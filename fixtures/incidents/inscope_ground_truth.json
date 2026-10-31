@@ -1,0 +1,67 @@
+{
+  "campaigns": [
+    {
+      "description": "Folder/org-level owner grant cascading to external identity",
+      "id": "campaign-a",
+      "marker": "campaign-a-ext-attacker",
+      "techniques": [
+        "T1098.003",
+        "T1199"
+      ]
+    },
+    {
+      "description": "Firewall world-open on admin ports across prod from rotating IPs",
+      "id": "campaign-b",
+      "marker": "campaign-b-fw-attacker",
+      "techniques": [
+        "T1562.007"
+      ]
+    },
+    {
+      "description": "Priority-shadow of deny-egress rule",
+      "id": "campaign-c",
+      "marker": "campaign-c-shadow",
+      "techniques": [
+        "T1562.007"
+      ]
+    },
+    {
+      "description": "External-partner editor/owner grant across projects",
+      "id": "campaign-d",
+      "marker": "campaign-d-partner",
+      "techniques": [
+        "T1199"
+      ]
+    },
+    {
+      "description": "Direct folder-scope token-creator binding to SA",
+      "id": "campaign-e",
+      "marker": "campaign-e-sa-owner",
+      "techniques": [
+        "T1098"
+      ]
+    }
+  ],
+  "decoys": [
+    {
+      "description": "0.0.0.0/0 opened then reverted to internal within 2h in dev",
+      "id": "reverted-dev-firewall",
+      "should_not_alert": true
+    },
+    {
+      "description": "Approved read-only external viewer in staging",
+      "id": "approved-external-viewer",
+      "should_not_alert": true
+    },
+    {
+      "description": "Expected staging service-account owner",
+      "id": "expected-staging-owner-sa",
+      "should_not_alert": true
+    },
+    {
+      "description": "Firewall widened from /24 to /8 but stays internal",
+      "id": "benign-internal-range-widen",
+      "should_not_alert": true
+    }
+  ]
+}

@@ -1,0 +1,58 @@
+{
+  "audit_changes": [],
+  "iam_policies": [],
+  "log_entries": [
+    {
+      "callerIp": "192.0.2.10",
+      "methodName": "v1.compute.firewalls.get",
+      "principalEmail": "cloud-actor-a@acme.example.com",
+      "resourceName": "projects/fake-prod-001/global/firewalls/rule-a",
+      "timestamp": "2026-09-15T00:00:00Z"
+    },
+    {
+      "callerIp": "192.0.2.11",
+      "methodName": "v1.compute.firewalls.get",
+      "principalEmail": "cloud-actor-a@acme.example.com",
+      "resourceName": "projects/fake-prod-001/global/firewalls/rule-a",
+      "timestamp": "2026-09-15T00:01:00Z"
+    },
+    {
+      "callerIp": "192.0.2.12",
+      "methodName": "v1.compute.firewalls.get",
+      "principalEmail": "cloud-actor-a@acme.example.com",
+      "resourceName": "projects/fake-prod-001/global/firewalls/rule-a",
+      "timestamp": "2026-09-15T00:02:00Z"
+    },
+    {
+      "callerIp": "10.99.1.5",
+      "methodName": "v1.compute.firewalls.get",
+      "principalEmail": "cloud-actor-a@acme.example.com",
+      "resourceName": "projects/fake-prod-001/global/firewalls/rule-a",
+      "timestamp": "2026-09-15T00:10:00Z"
+    },
+    {
+      "callerIp": "10.99.1.7",
+      "methodName": "v1.compute.firewalls.get",
+      "principalEmail": "cloud-actor-b@external.example.com",
+      "resourceName": "projects/fake-prod-001/global/firewalls/rule-a",
+      "timestamp": "2026-09-15T00:11:00Z"
+    },
+    {
+      "callerIp": "10.99.1.8",
+      "methodName": "v1.compute.firewalls.get",
+      "principalEmail": "cloud-actor-b@external.example.com",
+      "resourceName": "projects/fake-prod-001/global/firewalls/rule-a",
+      "timestamp": "2026-09-15T00:12:00Z"
+    },
+    {
+      "callerIp": "10.99.1.9",
+      "methodName": "v1.compute.firewalls.get",
+      "principalEmail": "cloud-actor-b@external.example.com",
+      "resourceName": "projects/fake-prod-001/global/firewalls/rule-a",
+      "timestamp": "2026-09-15T00:13:00Z"
+    }
+  ],
+  "network_firewall_policies": [],
+  "resources": [],
+  "vpc_firewall_rules": []
+}

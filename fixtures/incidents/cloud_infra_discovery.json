@@ -1,0 +1,93 @@
+{
+  "audit_changes": [],
+  "iam_policies": [],
+  "log_entries": [
+    {
+      "callerIp": "198.51.100.55",
+      "methodName": "v1.compute.firewalls.list",
+      "principalEmail": "recon-actor@external.example.com",
+      "resourceName": "projects/fake-prod-001/global/firewalls",
+      "timestamp": "2026-09-15T00:00:00Z"
+    },
+    {
+      "callerIp": "198.51.100.55",
+      "methodName": "v1.compute.firewalls.list",
+      "principalEmail": "recon-actor@external.example.com",
+      "resourceName": "projects/fake-prod-001/global/firewalls",
+      "timestamp": "2026-09-15T00:00:20Z"
+    },
+    {
+      "callerIp": "198.51.100.55",
+      "methodName": "v1.compute.firewalls.list",
+      "principalEmail": "recon-actor@external.example.com",
+      "resourceName": "projects/fake-prod-001/global/firewalls",
+      "timestamp": "2026-09-15T00:00:40Z"
+    },
+    {
+      "callerIp": "198.51.100.55",
+      "methodName": "v1.compute.firewalls.list",
+      "principalEmail": "recon-actor@external.example.com",
+      "resourceName": "projects/fake-prod-001/global/firewalls",
+      "timestamp": "2026-09-15T00:01:00Z"
+    },
+    {
+      "callerIp": "198.51.100.55",
+      "methodName": "v1.compute.firewalls.list",
+      "principalEmail": "recon-actor@external.example.com",
+      "resourceName": "projects/fake-prod-001/global/firewalls",
+      "timestamp": "2026-09-15T00:01:20Z"
+    },
+    {
+      "callerIp": "198.51.100.55",
+      "methodName": "v1.compute.firewalls.list",
+      "principalEmail": "recon-actor@external.example.com",
+      "resourceName": "projects/fake-prod-001/global/firewalls",
+      "timestamp": "2026-09-15T00:01:40Z"
+    },
+    {
+      "callerIp": "198.51.100.55",
+      "methodName": "v1.compute.firewalls.list",
+      "principalEmail": "recon-actor@external.example.com",
+      "resourceName": "projects/fake-prod-001/global/firewalls",
+      "timestamp": "2026-09-15T00:02:00Z"
+    },
+    {
+      "callerIp": "198.51.100.55",
+      "methodName": "v1.compute.firewalls.list",
+      "principalEmail": "recon-actor@external.example.com",
+      "resourceName": "projects/fake-prod-001/global/firewalls",
+      "timestamp": "2026-09-15T00:02:20Z"
+    },
+    {
+      "callerIp": "198.51.100.55",
+      "methodName": "v1.compute.firewalls.list",
+      "principalEmail": "recon-actor@external.example.com",
+      "resourceName": "projects/fake-prod-001/global/firewalls",
+      "timestamp": "2026-09-15T00:02:40Z"
+    },
+    {
+      "callerIp": "198.51.100.55",
+      "methodName": "v1.compute.firewalls.list",
+      "principalEmail": "recon-actor@external.example.com",
+      "resourceName": "projects/fake-prod-001/global/firewalls",
+      "timestamp": "2026-09-15T00:03:00Z"
+    },
+    {
+      "callerIp": "198.51.100.55",
+      "methodName": "v1.compute.firewalls.list",
+      "principalEmail": "recon-actor@external.example.com",
+      "resourceName": "projects/fake-prod-001/global/firewalls",
+      "timestamp": "2026-09-15T00:03:20Z"
+    },
+    {
+      "callerIp": "198.51.100.55",
+      "methodName": "v1.compute.firewalls.list",
+      "principalEmail": "recon-actor@external.example.com",
+      "resourceName": "projects/fake-prod-001/global/firewalls",
+      "timestamp": "2026-09-15T00:03:40Z"
+    }
+  ],
+  "network_firewall_policies": [],
+  "resources": [],
+  "vpc_firewall_rules": []
+}
