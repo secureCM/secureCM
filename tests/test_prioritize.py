@@ -67,6 +67,26 @@ class TestBlastRadiusScoreFormula(unittest.TestCase):
         br = compute_blast_radius(change)
         self.assertEqual(br.affected_resources, 1)
 
+    def test_blast_radius_no_matching_resources_floor_1(self):
+        """When no resources match the change's network/project, affected_resources floors to 1."""
+        ctx = _load_fixture()
+        # IAM change with a project that has no matching resources
+        change = Change(
+            resource="projects/nonexistent-project",
+            resource_type="iam_policy",
+            action="UPDATE",
+            before={"bindings": []},
+            after={"bindings": [{"role": "roles/viewer", "members": ["user:alice@example.com"]}]},
+            timestamp=datetime(2026, 10, 30, 16, 22, 41, tzinfo=timezone.utc),
+            principal="terraform-deployer@example-prod-project.iam.gserviceaccount.com",
+            risk_delta=1,
+            labels={},
+        )
+        br = compute_blast_radius(change, context=ctx)
+        # Even though no resources match, affected_resources must be at least 1
+        self.assertEqual(br.affected_resources, 1)
+        self.assertGreaterEqual(br.score, 1)
+
 
 class TestPrioritizeOrdersAndRanks(unittest.TestCase):
     def test_prioritize_orders_and_ranks(self):
@@ -129,6 +149,34 @@ class TestFormatReportIsRedacted(unittest.TestCase):
         stats = report["stats"]
         for key in ("total_changes", "risky", "neutral", "principals"):
             self.assertIn(key, stats)
+
+    def test_format_report_with_all_changes(self):
+        """format_report with all_changes computes accurate stats including neutral count."""
+        ctx = _load_fixture()
+        world_open = _world_open_change()
+        neutral = _neutral_change()
+        all_changes = [world_open, neutral]
+        prioritized = prioritize_changes(all_changes, context=ctx)
+        report = format_report(prioritized, all_changes=all_changes)
+        stats = report["stats"]
+        # total_changes should include all (risky + neutral)
+        self.assertEqual(stats["total_changes"], 2)
+        # risky should only be the non-neutral changes
+        self.assertEqual(stats["risky"], 1)
+        # neutral count should reflect the excluded changes
+        self.assertEqual(stats["neutral"], 1)
+        # principals should come from all_changes
+        self.assertEqual(len(stats["principals"]), 2)  # terraform-deployer and alice
+
+    def test_format_report_legacy_behavior(self):
+        """format_report without all_changes uses legacy behavior (neutral=0)."""
+        ctx = _load_fixture()
+        world_open = _world_open_change()
+        prioritized = prioritize_changes([world_open], context=ctx)
+        report = format_report(prioritized)  # No all_changes
+        stats = report["stats"]
+        self.assertEqual(stats["total_changes"], stats["risky"])
+        self.assertEqual(stats["neutral"], 0)
 
 
 if __name__ == "__main__":

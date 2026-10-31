@@ -27,8 +27,8 @@ class PrioritizedChange:
     blast_radius: BlastRadius
 
 
-def _network_from_resource_path(resource: str) -> str | None:
-    """Extract last path segment as the firewall rule name, to look up network."""
+def _last_path_segment(resource: str) -> str | None:
+    """Extract the final path segment from a resource path."""
     parts = resource.rsplit("/", 1)
     return parts[-1] if parts else None
 
@@ -48,24 +48,24 @@ def _count_affected(change: Change, context: dict) -> int:
 
     if change.resource_type in ("firewall_rule", "network_firewall_policy"):
         # Find network by looking up the firewall rule name in vpc_firewall_rules
-        rule_name = _network_from_resource_path(change.resource)
+        rule_name = _last_path_segment(change.resource)
         network = None
         for rule in context.get("vpc_firewall_rules", []):
             # rule["network"] is like "projects/.../networks/prod-network"
             rule_network = rule.get("network", "")
-            rule_rule_name = rule.get("name", "")
-            if rule_rule_name == rule_name:
+            rule_name_in_context = rule.get("name", "")
+            if rule_name_in_context == rule_name:
                 network = rule_network.rsplit("/", 1)[-1]
                 break
         if network is None:
             return 1
-        return sum(1 for r in resources if r.get("network") == network)
+        return max(1, sum(1 for r in resources if r.get("network") == network))
 
     # IAM or other: match by project
     project = _project_from_resource_path(change.resource)
     if project is None:
         return 1
-    return sum(1 for r in resources if r.get("project") == project)
+    return max(1, sum(1 for r in resources if r.get("project") == project))
 
 
 def _is_world_open(after: dict | None) -> bool:

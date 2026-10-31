@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from gcp_policy_analyzer.diff import Change
     from gcp_policy_analyzer.prioritize import PrioritizedChange
 
 PROD_LABEL_KEYS: tuple[str, ...] = ("env", "environment")
@@ -37,14 +38,33 @@ def is_service_account(member: str | dict) -> bool:
     return email.endswith(".gserviceaccount.com")
 
 
-def format_report(prioritized: "list[PrioritizedChange]") -> dict:
-    """Build a summary report dict from prioritized changes; all SA emails redacted internally."""
+def format_report(prioritized: "list[PrioritizedChange]", all_changes: "list[Change] | None" = None) -> dict:
+    """Build a summary report dict from prioritized changes; all SA emails redacted internally.
+
+    Args:
+        prioritized: list of PrioritizedChange (already filtered)
+        all_changes: optional list of all changes (before filtering). If provided:
+            - stats.total_changes = len(all_changes)
+            - stats.neutral = count of changes classified as Neutral or Other
+            - stats.principals = all unique principals from all_changes
+            If None, uses legacy behavior (total_changes = risky = len(prioritized), neutral = 0)
+    """
     from dataclasses import asdict
     from gcp_policy_analyzer.redact import redact_sensitive
+    from gcp_policy_analyzer.scoring import classify_change, ChangeClass
 
     risky = len(prioritized)
     principals = {pc.change.principal for pc in prioritized}
-    # ponytail: neutral/other already excluded by prioritize_changes; no re-count needed
+
+    if all_changes is not None:
+        total = len(all_changes)
+        neutral = sum(1 for c in all_changes if classify_change(c) in {ChangeClass.Neutral, ChangeClass.Other})
+        all_principals = {c.principal for c in all_changes}
+    else:
+        total = risky
+        neutral = 0
+        all_principals = principals
+
     raw = {
         "summary": f"{risky} risky change(s) prioritized.",
         "prioritized": [
@@ -61,10 +81,10 @@ def format_report(prioritized: "list[PrioritizedChange]") -> dict:
             for pc in prioritized
         ],
         "stats": {
-            "total_changes": risky,
+            "total_changes": total,
             "risky": risky,
-            "neutral": 0,  # neutral/other were excluded upstream
-            "principals": list(principals),
+            "neutral": neutral,
+            "principals": list(all_principals),
         },
     }
     return redact_sensitive(raw)
