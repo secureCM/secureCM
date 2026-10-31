@@ -143,7 +143,7 @@ def correlate_by_actor(
         changes: list of Change objects (contributes change_count per principal)
         entries: list of log entry dicts (principalEmail, callerIp, methodName, timestamp)
         anomaly_threshold: an IP is anomalous for an actor if it accounts for at most
-            this fraction of that actor's log events (default 0.25)
+            this fraction of that actor's IP-bearing log events (default 0.25)
         min_events_for_anomaly: only flag anomalous IPs for actors with at least this
             many log events (avoids noise on actors seen once or twice; default 3)
 
@@ -164,7 +164,7 @@ def correlate_by_actor(
             change_counts[p] = change_counts.get(p, 0) + 1
 
     ip_counts: dict[str, dict[str, int]] = {}   # actor -> {ip: count}
-    methods: dict[str, set] = {}
+    methods: dict[str, set[str]] = {}
     ip_actors: dict[str, set] = {}              # ip -> {actors}
     log_counts: dict[str, int] = {}
 
@@ -200,6 +200,7 @@ def correlate_by_actor(
             "methods": sorted(methods.get(actor, set())),
         })
 
+    actors.sort(key=lambda a: a["actor"])  # deterministic tiebreaker (stable sort)
     actors.sort(
         key=lambda a: (len(a["anomalous_ips"]), a["log_count"] + a["change_count"]),
         reverse=True,

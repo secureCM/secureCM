@@ -321,6 +321,19 @@ class TestLogsModule(unittest.TestCase):
         self.assertIn("198.51.100.99", by_actor["sa-bot@p.iam.gserviceaccount.com"]["anomalous_ips"])
         self.assertNotIn("10.0.0.2", by_actor["sa-bot@p.iam.gserviceaccount.com"]["anomalous_ips"])
 
+    def test_correlate_by_actor_deterministic_order_on_ties(self):
+        """Actors with equal sort keys must order deterministically (by actor name),
+        not by set-iteration order — this output is model-facing and cached across turns."""
+        from gcp_policy_analyzer.logs import correlate_by_actor
+        # three actors, identical activity (1 log each, no anomalies) → all keys tie
+        entries = [
+            {"principalEmail": p, "callerIp": "10.0.0.1", "methodName": "m",
+             "timestamp": "2026-11-01T10:00:00Z", "resourceName": "r"}
+            for p in ("zeta@x", "alpha@x", "mu@x")
+        ]
+        order = [a["actor"] for a in correlate_by_actor([], entries)["actors"]]
+        self.assertEqual(order, ["alpha@x", "mu@x", "zeta@x"])  # ascending actor name on ties
+
     def test_correlate_by_actor_empty(self):
         """No entries → empty actors list and empty shared_ips."""
         from gcp_policy_analyzer.logs import correlate_by_actor

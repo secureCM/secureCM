@@ -31,7 +31,8 @@ FINDING MULTI-STEP INCIDENTS (needle in a haystack):
   signal is usually a shared caller IP. correlate_by_actor(changes, log_entries)
   groups activity per principal and returns shared_ips (IPs used by >1 actor) and
   per-actor anomalous_ips — an external identity and a service account sharing one IP
-  are almost certainly one actor. Always inspect log_entries' callerIp; it is present.
+  are almost certainly one actor. Inspect log_entries' callerIp with .get("callerIp")
+  — present for most entries, absent for some (internal/scheduler calls).
 
 WORKED EXAMPLE (complex question, end to end):
   import json
