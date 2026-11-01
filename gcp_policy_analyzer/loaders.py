@@ -115,6 +115,74 @@ def load_network_firewall_policies(data: dict) -> list[NetworkFirewallPolicy]:
     return out
 
 
+# ---------------------------------------------------------------------------
+# Native Cloud Audit Log constants and loaders
+# ---------------------------------------------------------------------------
+
+IAM_CHANGE_METHODS: frozenset[str] = frozenset({
+    "SetIamPolicy",
+    "google.iam.v1.IAMPolicy.SetIamPolicy",
+})
+
+FW_CHANGE_METHODS: frozenset[str] = frozenset({
+    # VPC firewall  (compute.firewalls.<verb>)
+    "compute.firewalls.insert",
+    "compute.firewalls.patch",
+    "compute.firewalls.delete",
+    # Network Firewall Policy  (networkFirewallPolicies.<verb>)
+    "compute.networkFirewallPolicies.insert",
+    "compute.networkFirewallPolicies.patch",
+    "compute.networkFirewallPolicies.delete",
+    "compute.networkFirewallPolicies.addRule",
+    "compute.networkFirewallPolicies.patchRule",
+    "compute.networkFirewallPolicies.removeRule",
+})
+
+NFP_CHANGE_METHODS: frozenset[str] = FW_CHANGE_METHODS  # same surface for now
+
+ENABLER_METHODS: frozenset[str] = frozenset({
+    "google.iam.admin.v1.CreateServiceAccountKey",
+    "google.iam.admin.v1.DeleteServiceAccountKey",
+    "google.iam.admin.v1.UploadServiceAccountKey",
+    "google.admin.directory.member.insert",
+    "google.admin.directory.member.delete",
+})
+
+_ALL_KNOWN_METHODS: frozenset[str] = (
+    IAM_CHANGE_METHODS | FW_CHANGE_METHODS | NFP_CHANGE_METHODS | ENABLER_METHODS
+)
+
+
+def flatten_log_entry(entry: dict) -> dict:
+    """Map a native Cloud Audit LogEntry dict to a flat dict for downstream use."""
+    proto = entry.get("protoPayload", {})
+    auth = proto.get("authenticationInfo", {})
+    meta = proto.get("requestMetadata", {})
+    return {
+        "methodName":     proto.get("methodName", ""),
+        "principalEmail": auth.get("principalEmail", ""),
+        "callerIp":       meta.get("callerIp", ""),
+        "resourceName":   proto.get("resourceName", ""),
+        "timestamp":      entry.get("timestamp", ""),
+        "serviceData":    proto.get("serviceData", {}),
+        "request":        proto.get("request", {}),
+    }
+
+
+def load_log_entries(data: dict) -> list[dict]:
+    """Flatten log_entries and keep only entries for known change/enabler methods."""
+    out: list[dict] = []
+    for entry in data.get("log_entries", []):
+        # Idempotent: already-flat entries have top-level methodName, no protoPayload
+        if "protoPayload" in entry:
+            flat = flatten_log_entry(entry)
+        else:
+            flat = entry
+        if flat.get("methodName", "") in _ALL_KNOWN_METHODS:
+            out.append(flat)
+    return out
+
+
 def load_audit_changes(
     data: dict,
     resource_types: list[str] | None = None,
