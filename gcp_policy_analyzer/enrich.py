@@ -20,7 +20,8 @@ def enrich_with_enablers(
     window_seconds: int = 86400,
 ) -> list[Change]:
     """For each Change, annotate labels["enabler"] if the principal had an enabler event
-    within window_seconds before the change timestamp. Pure, order-stable."""
+    within window_seconds before the change timestamp. Pure, order-stable.
+    Note: first-match-wins assumes flat_logs is in chronological order."""
     # Build {principal: [flat_entry, ...]} for enabler-method entries only
     enablers: dict[str, list[dict]] = {}
     for entry in flat_logs:

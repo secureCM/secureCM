@@ -18,7 +18,8 @@
       "status": "partial",
       "detector": "enrich_with_enablers",
       "fixture": "fixtures/incidents/sa_key_enabler.json",
-      "verified": null
+      "verified": null,
+      "reason": null
     },
     {
       "id": "T1098.003",

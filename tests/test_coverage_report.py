@@ -55,6 +55,53 @@ class TestCoverageReport(unittest.TestCase):
         r = self._build(catalog)
         self.assertTrue(len(r["dangling"]) > 0)
 
+    # ── partial gate ─────────────────────────────────────────────────────────
+
+    def test_partial_real_detector_flagged_as_regression(self):
+        """A partial entry whose real finding-emitter detector fires nothing → regression."""
+        # detect_privilege_grant is a real Finding-emitter; use account_manipulation.json
+        # but point the technique at a fixture that produces no T1999.001 finding.
+        catalog = {
+            "attack_version": "test",
+            "techniques": [
+                {
+                    "id": "T1999.001",
+                    "name": "Fake Partial",
+                    "tactic": "persistence",
+                    "status": "partial",
+                    "detector": "detect_privilege_grant",
+                    # account_manipulation.json fires T1098 findings, not T1999.001
+                    "fixture": "fixtures/incidents/account_manipulation.json",
+                    "verified": False,
+                    "reason": None,
+                }
+            ],
+        }
+        r = self._build(catalog)
+        self.assertIn("T1999.001", r["regressions"],
+                      "partial with real detector that emits no matching finding must be a regression")
+
+    def test_partial_enrich_with_enablers_not_flagged(self):
+        """enrich_with_enablers partial entry is never flagged as a regression."""
+        catalog = {
+            "attack_version": "test",
+            "techniques": [
+                {
+                    "id": "T1098.001",
+                    "name": "Additional Cloud Credentials",
+                    "tactic": "persistence",
+                    "status": "partial",
+                    "detector": "enrich_with_enablers",
+                    "fixture": "fixtures/incidents/sa_key_enabler.json",
+                    "verified": None,
+                    "reason": None,
+                }
+            ],
+        }
+        r = self._build(catalog)
+        self.assertNotIn("T1098.001", r["regressions"],
+                         "enrich_with_enablers partial must never appear in regressions")
+
 
 if __name__ == "__main__":
     unittest.main()

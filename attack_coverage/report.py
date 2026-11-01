@@ -73,8 +73,8 @@ def build_report(catalog: dict | None = None) -> dict:
                 continue  # skip regression check for dangling
 
             # regression: fixture exists but detector fires no matching finding
-            # ponytail: partial = correlation enricher — annotates changes, no Finding emitted; skip
-            if status == "partial":
+            # enrich_with_enablers annotates changes only, emits no Findings — skip the fire-check
+            if detector == "enrich_with_enablers":
                 continue
             with open(_REPO_ROOT / fixture, encoding="utf-8") as fh:
                 envelope = json.load(fh)
