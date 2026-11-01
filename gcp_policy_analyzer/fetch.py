@@ -15,7 +15,6 @@ _RESOURCE_TYPES = (
     "iam_policies",
     "vpc_firewall_rules",
     "network_firewall_policies",
-    "audit_changes",
     "log_entries",
 )
 

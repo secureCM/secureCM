@@ -92,7 +92,7 @@ class TestFetch(unittest.TestCase):
 
     def test_fetch_all_merges_resource_types(self):
         types = ("iam_policies", "vpc_firewall_rules", "network_firewall_policies",
-                 "audit_changes", "log_entries")
+                 "log_entries")
         for t in types:
             _Handler.routes[("/export", t, None)] = (200, json.dumps({t: [{"t": t}]}))
         result = fetch_all(self.base_url, "projects/demo")
@@ -135,3 +135,52 @@ class TestFetch(unittest.TestCase):
             self.assertIn(self.base_url, msg)
         finally:
             fetch_module.MAX_RESPONSE_BYTES = original_max
+
+    def test_fetch_all_requests_log_entries_not_audit_changes(self):
+        """fetch_all issues a log_entries request and no audit_changes request."""
+        import gcp_policy_analyzer.fetch as fetch_module
+        tracked_types = []
+        original_fetch_export = fetch_module.fetch_export
+
+        def track_fetch_export(base_url, resource_type, scope, **kwargs):
+            tracked_types.append(resource_type)
+            return original_fetch_export(base_url, resource_type, scope, **kwargs)
+
+        try:
+            fetch_module.fetch_export = track_fetch_export
+            types = ("iam_policies", "vpc_firewall_rules", "network_firewall_policies", "log_entries")
+            for t in types:
+                _Handler.routes[("/export", t, None)] = (200, json.dumps({t: []}))
+            fetch_all(self.base_url, "projects/demo")
+            self.assertIn("log_entries", tracked_types)
+            self.assertNotIn("audit_changes", tracked_types)
+        finally:
+            fetch_module.fetch_export = original_fetch_export
+
+    def test_fetch_returns_native_verbatim(self):
+        """fetch_export returns native JSON unchanged (no flattening client-side)."""
+        # Stub returns a native LogEntry structure with nested objects
+        native_response = {
+            "log_entries": [
+                {
+                    "name": "projects/test/logs/cloudresourcemanager.googleapis.com/activity",
+                    "timestamp": "2025-01-01T00:00:00Z",
+                    "jsonPayload": {
+                        "methodName": "storage.buckets.create",
+                        "resourceName": "projects/test/buckets/my-bucket",
+                        "metadata": {
+                            "labels": {"env": "prod"}
+                        }
+                    },
+                    "severity": "NOTICE"
+                }
+            ]
+        }
+        _Handler.routes[("/export", "log_entries", None)] = (200, json.dumps(native_response))
+        result = fetch_export(self.base_url, "log_entries", "projects/test")
+        # Assert verbatim return: exact same structure, no transformations
+        self.assertEqual(result, native_response)
+        # Confirm nested structure is preserved
+        self.assertEqual(len(result["log_entries"]), 1)
+        entry = result["log_entries"][0]
+        self.assertEqual(entry["jsonPayload"]["metadata"]["labels"], {"env": "prod"})
