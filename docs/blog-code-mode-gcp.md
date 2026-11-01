@@ -47,4 +47,4 @@ Scope is three surfaces — IAM allow policies, VPC firewall rules, network fire
 
 Fixtures, the ATT&CK coverage catalog, and the benchmark harness are in the repo.
 
-Repo: [link]
+Repo: https://github.com/secureCM/secureCM
