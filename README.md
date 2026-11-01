@@ -380,6 +380,7 @@ Native `compute#firewallPolicy` shape:
 {
   "kind":   "compute#firewallPolicy",
   "name":   "prod-network-policy",
+  "region": null,
   "rules": [
     {
       "priority":  1000,
@@ -391,7 +392,7 @@ Native `compute#firewallPolicy` shape:
 }
 ```
 
-`region` present → regional policy; absent → global (`None` in the dataclass). Follows the `compute#firewallPolicy` shape for both global and regional policies.
+`region` present → regional policy (e.g. `"region": "us-central1"`); absent or `null` → global (`None` in the dataclass). Follows the `compute#firewallPolicy` shape for both global and regional policies.
 
 ### `log_entries` — Cloud Audit LogEntry (native)
 

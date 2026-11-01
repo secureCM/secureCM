@@ -152,6 +152,25 @@ class TestNativeStateLoaders(unittest.TestCase):
         self.assertEqual(result[0].resource, "folders/77")
         self.assertEqual(result[0].bindings[0].role, "roles/viewer")
 
+    def test_iam_asset_wrapped_organizations_prefix(self):
+        """organizations/ prefix: //cloudresourcemanager.googleapis.com/organizations/555 → 'organizations/555'."""
+        data = {
+            "iam_policies": [
+                {
+                    "name": "//cloudresourcemanager.googleapis.com/organizations/555",
+                    "asset_type": "cloudresourcemanager.googleapis.com/Organization",
+                    "iam_policy": {
+                        "bindings": [
+                            {"role": "roles/owner", "members": ["user:admin@example.com"]}
+                        ]
+                    },
+                }
+            ]
+        }
+        result = load_iam_policies(data)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].resource, "organizations/555")
+
     def test_firewall_native_compute_kind_parses(self):
         """Native compute#firewall with logConfig.enable=True → log_enabled True, raw present."""
         data = {

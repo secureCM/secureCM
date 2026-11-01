@@ -251,7 +251,9 @@ def _iam_changes_from_logs(flat_entries: list[dict]) -> list[Change]:
         after = {"bindings": [{"role": r, "members": m} for r, m in add_by_role.items()]}
         before = {"bindings": [{"role": r, "members": m} for r, m in rem_by_role.items()]}
         ts_raw = entry.get("timestamp", "")
-        ts = _parse_ts(ts_raw) if ts_raw else datetime.now(timezone.utc)
+        if not ts_raw:
+            continue  # skip timestamp-less entries; fabricating wall-clock now is non-deterministic
+        ts = _parse_ts(ts_raw)
         out.append(Change(
             resource=entry.get("resourceName", ""),
             resource_type="iam_policy",
@@ -294,7 +296,9 @@ def _config_changes_from_logs(flat_entries: list[dict]) -> list[Change]:
             method = entry.get("methodName", "")
             request = dict(entry.get("request") or {})
             ts_raw = entry.get("timestamp", "")
-            ts = _parse_ts(ts_raw) if ts_raw else datetime.now(timezone.utc)
+            if not ts_raw:
+                continue  # skip timestamp-less entries; fabricating wall-clock now is non-deterministic
+            ts = _parse_ts(ts_raw)
             principal = entry.get("principalEmail", "")
 
             verb = method.rsplit(".", 1)[-1]  # insert / patch / delete / addRule / patchRule / removeRule

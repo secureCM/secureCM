@@ -253,5 +253,32 @@ class TestNfpWorldOpenViaReplay(unittest.TestCase):
         self.assertTrue(any(f.technique_id == "T1562.007" for f in findings))
 
 
+class TestMissingTimestampProducesNoChange(unittest.TestCase):
+    def test_setiampolicy_no_timestamp_skipped(self):
+        """SetIamPolicy entry with no timestamp → 0 Changes (not raised, not fabricated)."""
+        data = {"log_entries": [{"protoPayload": {
+            "methodName": "SetIamPolicy",
+            "resourceName": "projects/my-proj",
+            "authenticationInfo": {"principalEmail": "admin@example.com"},
+            "requestMetadata": {"callerIp": "1.2.3.4"},
+            "serviceData": {"policyDelta": {"bindingDeltas": [
+                {"action": "ADD", "role": "roles/owner", "member": "user:x@example.com"},
+            ]}},
+            "request": {},
+        }}]}  # no "timestamp" key at the outer LogEntry level
+        changes = load_audit_changes(data)
+        self.assertEqual(len(changes), 0)
+
+    def test_firewall_patch_no_timestamp_skipped(self):
+        """compute.firewalls.patch entry with no timestamp → 0 Changes (not raised, not fabricated)."""
+        entries = [
+            _fw_entry("compute.firewalls.patch", "projects/p/global/firewalls/fw",
+                      {"sourceRanges": ["0.0.0.0/0"]},
+                      timestamp=""),  # empty timestamp
+        ]
+        changes = _config_changes_from_logs(entries)
+        self.assertEqual(len(changes), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
