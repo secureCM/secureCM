@@ -481,6 +481,30 @@ The MCP server exposes two tools:
 
 The server holds no LLM key and makes no model calls. The external agent (Claude Code, Agent SDK app, or any MCP client) writes the scripts; the server only runs them.
 
+### Minimal runtime bundle
+
+The library is standard-library only — no pip install — so putting it inside your sandbox (gVisor, Firecracker microVM, Aegis, nsjail, …) is just copying in the runtime code. Only three packages are needed at runtime:
+
+- `gcp_policy_analyzer/` — the helper library the agent imports.
+- `attack_coverage/` — `catalog.py`, `signatures.py`, and `attack_catalog.json` (the ATT&CK registry behind `run_detectors`). `report.py` is the CI/coverage gate and is **not** a runtime dependency.
+- `codemode/` — the MCP server and executor.
+
+Not needed at runtime: `docs/`, `tests/`, `examples/`, `fixtures/`. Nothing in the three runtime packages imports `examples/` or `fixtures/`; in production the data arrives from the broker/export, and `fixtures/` is consumed only by the test suite and `attack_coverage/report.py`.
+
+Assemble the bundle (≈18 files, ≈140 KB):
+
+```bash
+scripts/make-sandbox-bundle.sh ./sandbox-bundle
+```
+
+Then, inside your sandbox:
+
+```bash
+PYTHONPATH=/path/to/bundle python codemode/mcp_server.py
+```
+
+The bundle holds no credentials; deny-by-default egress and real isolation remain the sandbox's responsibility (see *Calling runtime responsibilities* above).
+
 ### Redaction posture
 
 `redact_sensitive` is the mandatory exit filter. Every output path ends in it:
