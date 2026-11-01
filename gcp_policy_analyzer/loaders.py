@@ -184,37 +184,95 @@ def load_log_entries(data: dict) -> list[dict]:
     return out
 
 
+def _iam_changes_from_logs(flat_entries: list[dict]) -> list[Change]:
+    """Derive IAM Change records from flat SetIamPolicy log entries via policyDelta."""
+    out: list[Change] = []
+    for entry in flat_entries:
+        if entry.get("methodName") not in IAM_CHANGE_METHODS:
+            continue
+        # serviceData path primary; fallback to protoPayload.metadata (not flattened, skip)
+        service_data = entry.get("serviceData") or {}
+        deltas = service_data.get("policyDelta", {}).get("bindingDeltas", [])
+        if not deltas:
+            continue
+        # Group ADD deltas by role → after bindings; REMOVE deltas → before bindings
+        add_by_role: dict[str, list[str]] = {}
+        rem_by_role: dict[str, list[str]] = {}
+        for d in deltas:
+            action = d.get("action", "")
+            role = d.get("role", "")
+            member = d.get("member", "")
+            if action == "ADD":
+                add_by_role.setdefault(role, []).append(member)
+            elif action == "REMOVE":
+                rem_by_role.setdefault(role, []).append(member)
+        after = {"bindings": [{"role": r, "members": m} for r, m in add_by_role.items()]}
+        before = {"bindings": [{"role": r, "members": m} for r, m in rem_by_role.items()]}
+        ts_raw = entry.get("timestamp", "")
+        ts = _parse_ts(ts_raw) if ts_raw else datetime.now(timezone.utc)
+        out.append(Change(
+            resource=entry.get("resourceName", ""),
+            resource_type="iam_policy",
+            action="UPDATE",
+            principal=entry.get("principalEmail", ""),
+            timestamp=ts,
+            before=before,
+            after=after,
+        ))
+    return out
+
+
 def load_audit_changes(
     data: dict,
     resource_types: list[str] | None = None,
     start: datetime | None = None,
     end: datetime | None = None,
 ) -> list[Change]:
-    """Parse audit change records from the export envelope, filtering by type and time window."""
+    """Parse audit change records from the export envelope, filtering by type and time window.
+
+    Dual-mode: uses legacy data["audit_changes"] list if present; otherwise derives
+    IAM changes from data["log_entries"] via _iam_changes_from_logs. (Task 7 removes legacy path.)
+    """
     # Convert naive start/end to UTC
     utc_start = _parse_ts(start) if start is not None else None
     utc_end   = _parse_ts(end)   if end   is not None else None
 
+    if "audit_changes" in data:
+        # Legacy path
+        raw_changes: list[Change] = []
+        for record in data["audit_changes"]:
+            if resource_types and record.get("resource_type") not in resource_types:
+                continue
+            if "timestamp" not in record:
+                continue
+            ts = _parse_ts(record["timestamp"])
+            if utc_start is not None and ts < utc_start:
+                continue
+            if utc_end is not None and ts > utc_end:
+                continue
+            raw_changes.append(Change(
+                resource=record.get("resource", ""),
+                resource_type=record.get("resource_type", ""),
+                action=record.get("action", ""),
+                principal=record.get("principal", ""),
+                timestamp=ts,
+                before=record.get("before"),
+                after=record.get("after"),
+                labels=record.get("labels", {}),
+            ))
+        return raw_changes
+
+    # Native log_entries path
+    flat = load_log_entries(data)
+    derived = _iam_changes_from_logs(flat)
+    # Apply resource_type and time filters
     out: list[Change] = []
-    for record in data.get("audit_changes", []):
-        if resource_types and record.get("resource_type") not in resource_types:
+    for c in derived:
+        if resource_types and c.resource_type not in resource_types:
             continue
-        # I1: skip records missing timestamp rather than raise KeyError
-        if "timestamp" not in record:
+        if utc_start is not None and c.timestamp < utc_start:
             continue
-        ts = _parse_ts(record["timestamp"])
-        if utc_start is not None and ts < utc_start:
+        if utc_end is not None and c.timestamp > utc_end:
             continue
-        if utc_end is not None and ts > utc_end:
-            continue
-        out.append(Change(
-            resource=record.get("resource", ""),
-            resource_type=record.get("resource_type", ""),
-            action=record.get("action", ""),
-            principal=record.get("principal", ""),
-            timestamp=ts,
-            before=record.get("before"),
-            after=record.get("after"),
-            labels=record.get("labels", {}),
-        ))
+        out.append(c)
     return out
