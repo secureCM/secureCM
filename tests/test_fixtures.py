@@ -141,6 +141,8 @@ class TestFixtureGenerator(unittest.TestCase):
                     data.get("audit_changes", []),
                     data.get("log_entries", []),
                 )
+            elif detector == "enrich_with_enablers":
+                continue  # correlation enricher — annotates changes, emits no Findings; skip fire-check
             else:
                 self.fail(f"Unknown detector {detector!r} for {tid}")
 

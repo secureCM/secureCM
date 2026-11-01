@@ -15,11 +15,10 @@
       "id": "T1098.001",
       "name": "Account Manipulation: Additional Cloud Credentials",
       "tactic": "persistence",
-      "status": "out-of-scope",
-      "detector": null,
-      "fixture": null,
-      "verified": null,
-      "reason": "surface not ingested: keys/tokens"
+      "status": "partial",
+      "detector": "enrich_with_enablers",
+      "fixture": "fixtures/incidents/sa_key_enabler.json",
+      "verified": null
     },
     {
       "id": "T1098.003",

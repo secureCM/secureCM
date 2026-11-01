@@ -1,0 +1,42 @@
+{
+  "audit_changes": [],
+  "iam_policies": [],
+  "log_entries": [
+    {
+      "protoPayload": {
+        "methodName": "google.iam.admin.v1.CreateServiceAccountKey",
+        "authenticationInfo": {
+          "principalEmail": "attacker-sa@fake-proj.iam.gserviceaccount.com"
+        },
+        "requestMetadata": {"callerIp": "1.2.3.4"},
+        "resourceName": "projects/fake-proj/serviceAccounts/attacker-sa@fake-proj.iam.gserviceaccount.com"
+      },
+      "timestamp": "2026-09-15T10:00:00Z"
+    },
+    {
+      "protoPayload": {
+        "methodName": "SetIamPolicy",
+        "authenticationInfo": {
+          "principalEmail": "attacker-sa@fake-proj.iam.gserviceaccount.com"
+        },
+        "requestMetadata": {"callerIp": "1.2.3.4"},
+        "resourceName": "projects/fake-proj",
+        "serviceData": {
+          "policyDelta": {
+            "bindingDeltas": [
+              {
+                "action": "ADD",
+                "role": "roles/owner",
+                "member": "serviceAccount:attacker-sa@fake-proj.iam.gserviceaccount.com"
+              }
+            ]
+          }
+        }
+      },
+      "timestamp": "2026-09-15T11:00:00Z"
+    }
+  ],
+  "network_firewall_policies": [],
+  "resources": [],
+  "vpc_firewall_rules": []
+}

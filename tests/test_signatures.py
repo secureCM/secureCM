@@ -24,11 +24,11 @@ class TestRegistry(unittest.TestCase):
 
     def test_every_registry_detector_exists(self):
         import gcp_policy_analyzer.detect as det_mod
+        import gcp_policy_analyzer.enrich as enrich_mod
         for tid, name in TECHNIQUE_DETECTOR.items():
-            self.assertTrue(
-                callable(getattr(det_mod, name, None)),
-                f"{name} for {tid} not callable in gcp_policy_analyzer.detect",
-            )
+            # Detectors may live in detect.py or enrich.py
+            found = callable(getattr(det_mod, name, None)) or callable(getattr(enrich_mod, name, None))
+            self.assertTrue(found, f"{name} for {tid} not callable in detect or enrich")
 
 
 class TestRunDetectors(unittest.TestCase):

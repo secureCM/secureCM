@@ -20,6 +20,8 @@ from gcp_policy_analyzer.prioritize import (
     prioritize_changes,
     compute_blast_radius,
 )
+from gcp_policy_analyzer.loaders import flatten_log_entry, load_log_entries
+from gcp_policy_analyzer.enrich import enrich_with_enablers
 from gcp_policy_analyzer.logs import filter_log_entries, correlate_changes_with_logs, correlate_by_actor
 from gcp_policy_analyzer.detect import (
     Finding,
@@ -50,6 +52,9 @@ __all__ = [
     "ChangeClass",
     "prioritize_changes",
     "compute_blast_radius",
+    "flatten_log_entry",
+    "load_log_entries",
+    "enrich_with_enablers",
     "filter_log_entries",
     "correlate_changes_with_logs",
     "correlate_by_actor",

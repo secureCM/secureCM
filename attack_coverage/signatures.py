@@ -9,9 +9,11 @@ from gcp_policy_analyzer.detect import (
     detect_firewall_exposure,
     detect_privilege_grant,
 )
+from gcp_policy_analyzer.enrich import enrich_with_enablers
 from gcp_policy_analyzer.loaders import (
     load_audit_changes,
     load_iam_policies,
+    load_log_entries,
     load_network_firewall_policies,
     load_vpc_firewall_rules,
 )
@@ -28,6 +30,7 @@ _DETECTORS = {
     "detect_privilege_grant": detect_privilege_grant,
     "detect_discovery_bursts": detect_discovery_bursts,
     "detect_anomalous_actor": detect_anomalous_actor,
+    "enrich_with_enablers": enrich_with_enablers,  # ponytail: correlation enricher, not a Finding producer
 }
 
 
@@ -61,6 +64,9 @@ def run_detectors(envelope: dict) -> list[Finding]:
             results.extend(fn(logs))
         elif name == "detect_anomalous_actor":
             results.extend(fn(changes, logs))
+        elif name == "enrich_with_enablers":
+            flat = load_log_entries(envelope)
+            fn(changes, flat)  # mutates changes in place; no Findings produced
 
     return results
 
