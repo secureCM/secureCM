@@ -33,21 +33,33 @@ class TestRegistry(unittest.TestCase):
 
 class TestRunDetectors(unittest.TestCase):
     def _firewall_envelope(self):
+        # Native log_entries: insert then patch to world-open → detect_firewall_exposure fires T1562.007
         return {
-            "audit_changes": [
+            "log_entries": [
                 {
-                    "resource": "projects/proj/global/firewalls/fw1",
-                    "resource_type": "firewall",
-                    "action": "UPDATE",
-                    "principal": "admin@acme.example.com",
-                    "timestamp": "2026-10-31T10:00:00Z",
-                    "before": {"sourceRanges": ["10.0.0.0/8"], "allowed": []},
-                    "after": {
-                        "sourceRanges": ["0.0.0.0/0"],
-                        "allowed": [{"IPProtocol": "tcp", "ports": ["22"]}],
+                    "protoPayload": {
+                        "methodName": "compute.firewalls.insert",
+                        "resourceName": "projects/proj/global/firewalls/fw1",
+                        "authenticationInfo": {"principalEmail": "admin@acme.example.com"},
+                        "requestMetadata": {"callerIp": "10.0.0.1"},
+                        "serviceData": {},
+                        "request": {"sourceRanges": ["10.0.0.0/8"],
+                                    "allowed": [{"IPProtocol": "tcp", "ports": ["22"]}]},
                     },
-                    "labels": {},
-                }
+                    "timestamp": "2026-10-31T09:00:00Z",
+                },
+                {
+                    "protoPayload": {
+                        "methodName": "compute.firewalls.patch",
+                        "resourceName": "projects/proj/global/firewalls/fw1",
+                        "authenticationInfo": {"principalEmail": "admin@acme.example.com"},
+                        "requestMetadata": {"callerIp": "10.0.0.1"},
+                        "serviceData": {},
+                        "request": {"sourceRanges": ["0.0.0.0/0"],
+                                    "allowed": [{"IPProtocol": "tcp", "ports": ["22"]}]},
+                    },
+                    "timestamp": "2026-10-31T10:00:00Z",
+                },
             ]
         }
 

@@ -302,6 +302,8 @@ def _config_changes_from_logs(flat_entries: list[dict]) -> list[Change]:
             if verb == "insert":
                 before_state = running  # normally None for first insert
                 running = dict(request)
+                # Promote domain labels (e.g. env:prod) from resource state to Change.labels
+                domain_labels = dict(running.get("labels", {}))
                 out.append(Change(
                     resource=resource,
                     resource_type=resource_type,
@@ -310,6 +312,7 @@ def _config_changes_from_logs(flat_entries: list[dict]) -> list[Change]:
                     after=dict(running),
                     timestamp=ts,
                     principal=principal,
+                    labels=domain_labels,
                 ))
 
             elif verb == "delete":
@@ -317,6 +320,9 @@ def _config_changes_from_logs(flat_entries: list[dict]) -> list[Change]:
                 before_state = running
                 if running is None:
                     labels = {"baseline": "predates_window"}
+                else:
+                    # Promote domain labels from the last known state
+                    labels = dict(running.get("labels", {}))
                 out.append(Change(
                     resource=resource,
                     resource_type=resource_type,
@@ -337,6 +343,11 @@ def _config_changes_from_logs(flat_entries: list[dict]) -> list[Change]:
                     labels = {"baseline": "predates_window"}
                     running = {}
                 running = {**running, **request}  # partial merge
+                # Promote domain labels from merged state; preserve baseline gap label
+                domain_labels = dict(running.get("labels", {}))
+                if "baseline" in labels:
+                    domain_labels["baseline"] = labels["baseline"]
+                labels = domain_labels
                 out.append(Change(
                     resource=resource,
                     resource_type=resource_type,
@@ -357,41 +368,12 @@ def load_audit_changes(
     start: datetime | None = None,
     end: datetime | None = None,
 ) -> list[Change]:
-    """Parse audit change records from the export envelope, filtering by type and time window.
-
-    Dual-mode: uses legacy data["audit_changes"] list if present; otherwise derives
-    IAM changes from data["log_entries"] via _iam_changes_from_logs. (Task 7 removes legacy path.)
-    """
+    """Derive Change records from native log_entries, filtered by type and time window."""
     # Convert naive start/end to UTC
     utc_start = _parse_ts(start) if start is not None else None
     utc_end   = _parse_ts(end)   if end   is not None else None
 
-    if "audit_changes" in data:
-        # Legacy path
-        raw_changes: list[Change] = []
-        for record in data["audit_changes"]:
-            if resource_types and record.get("resource_type") not in resource_types:
-                continue
-            if "timestamp" not in record:
-                continue
-            ts = _parse_ts(record["timestamp"])
-            if utc_start is not None and ts < utc_start:
-                continue
-            if utc_end is not None and ts > utc_end:
-                continue
-            raw_changes.append(Change(
-                resource=record.get("resource", ""),
-                resource_type=record.get("resource_type", ""),
-                action=record.get("action", ""),
-                principal=record.get("principal", ""),
-                timestamp=ts,
-                before=record.get("before"),
-                after=record.get("after"),
-                labels=record.get("labels", {}),
-            ))
-        return raw_changes
-
-    # Native log_entries path
+    # Native log_entries path (only path — legacy audit_changes key removed in Task 7)
     flat = load_log_entries(data)
     derived = _iam_changes_from_logs(flat) + _config_changes_from_logs(flat)
     # Apply resource_type and time filters

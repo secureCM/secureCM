@@ -1,27 +1,47 @@
 {
-  "audit_changes": [
+  "iam_policies": [],
+  "log_entries": [
     {
-      "action": "DELETE",
-      "after": null,
-      "before": {
-        "denied": [
-          {
-            "IPProtocol": "all"
+      "protoPayload": {
+        "authenticationInfo": {
+          "principalEmail": "infra-sa@fake-prod-001.iam.gserviceaccount.com"
+        },
+        "methodName": "compute.firewalls.insert",
+        "request": {
+          "denied": [
+            {
+              "IPProtocol": "all"
+            }
+          ],
+          "direction": "EGRESS",
+          "labels": {
+            "env": "prod"
           }
-        ],
-        "direction": "EGRESS"
+        },
+        "requestMetadata": {
+          "callerIp": "10.1.0.1"
+        },
+        "resourceName": "projects/fake-prod-001/global/firewalls/deny-all-egress",
+        "serviceData": {}
       },
-      "labels": {
-        "env": "prod"
+      "timestamp": "2026-09-14T23:00:00Z"
+    },
+    {
+      "protoPayload": {
+        "authenticationInfo": {
+          "principalEmail": "infra-sa@fake-prod-001.iam.gserviceaccount.com"
+        },
+        "methodName": "compute.firewalls.delete",
+        "request": {},
+        "requestMetadata": {
+          "callerIp": "10.1.0.1"
+        },
+        "resourceName": "projects/fake-prod-001/global/firewalls/deny-all-egress",
+        "serviceData": {}
       },
-      "principal": "infra-sa@fake-prod-001.iam.gserviceaccount.com",
-      "resource": "projects/fake-prod-001/global/firewalls/deny-all-egress",
-      "resource_type": "firewall_rule",
       "timestamp": "2026-09-15T00:00:00Z"
     }
   ],
-  "iam_policies": [],
-  "log_entries": [],
   "network_firewall_policies": [],
   "resources": [],
   "vpc_firewall_rules": []

@@ -46,15 +46,21 @@ class TestFixtureGenerator(unittest.TestCase):
                 )
 
     def test_haystack_only_inscope_resource_types(self):
-        """Every audit_change in inscope_haystack.json has an in-scope resource_type,
-        and all three surfaces (iam_policy, firewall_rule, network_firewall_policy) appear."""
+        """All derived Changes in inscope_haystack.json have an in-scope resource_type,
+        and all three surfaces (iam_policy, firewall_rule, network_firewall_policy) appear.
+        Verifies native log_entries only (no top-level audit_changes key)."""
+        sys.path.insert(0, str(REPO))
+        from gcp_policy_analyzer.loaders import load_audit_changes
         haystack = _load(INCIDENTS / "inscope_haystack.json")
+        self.assertNotIn("audit_changes", haystack,
+                         "Native haystack must not have top-level audit_changes key")
+        changes = load_audit_changes(haystack)
         seen_types: set[str] = set()
-        for change in haystack.get("audit_changes", []):
-            rt = change.get("resource_type")
+        for c in changes:
+            rt = c.resource_type
             self.assertIn(
                 rt, VALID_RESOURCE_TYPES,
-                f"Out-of-scope resource_type {rt!r} in audit_changes",
+                f"Out-of-scope resource_type {rt!r} in derived changes",
             )
             seen_types.add(rt)
         self.assertEqual(
@@ -68,19 +74,26 @@ class TestFixtureGenerator(unittest.TestCase):
         campaigns = gt.get("campaigns", [])
         self.assertGreaterEqual(len(campaigns), 5, "Expected >=5 campaigns in ground truth")
         haystack = _load(INCIDENTS / "inscope_haystack.json")
-        # Collect all principals + resources from haystack for basic presence check
+        # Collect all principals + resources from native log_entries
         all_principals = set()
-        for ch in haystack.get("audit_changes", []):
-            all_principals.add(ch.get("principal", ""))
+        all_resources = set()
         for le in haystack.get("log_entries", []):
-            all_principals.add(le.get("principalEmail", ""))
+            # native LogEntry shape
+            if "protoPayload" in le:
+                proto = le["protoPayload"]
+                all_principals.add(proto.get("authenticationInfo", {}).get("principalEmail", ""))
+                all_resources.add(proto.get("resourceName", ""))
+            else:
+                # flat entry
+                all_principals.add(le.get("principalEmail", ""))
+                all_resources.add(le.get("resourceName", ""))
         for campaign in campaigns:
             marker = campaign.get("marker")
             self.assertIsNotNone(marker, "Campaign missing 'marker' field")
             self.assertTrue(
                 any(marker in p for p in all_principals)
-                or any(marker in ch.get("resource", "") for ch in haystack.get("audit_changes", [])),
-                f"Campaign marker {marker!r} not found in haystack principals/resources",
+                or any(marker in r for r in all_resources),
+                f"Campaign marker {marker!r} not found in haystack log_entries principals/resources",
             )
 
     def test_per_technique_fixtures_exist(self):
@@ -113,6 +126,7 @@ class TestFixtureGenerator(unittest.TestCase):
             detect_discovery_bursts,
             detect_anomalous_actor,
         )
+        from gcp_policy_analyzer.loaders import load_audit_changes
         catalog = _load(CATALOG_PATH)
         for tech in catalog["techniques"]:
             if tech["status"] not in ("covered", "partial"):
@@ -124,21 +138,24 @@ class TestFixtureGenerator(unittest.TestCase):
             detector = tech["detector"]
             tid = tech["id"]
 
+            # Derive Change objects from native log_entries
+            changes = load_audit_changes(data)
+
             if detector == "detect_privilege_grant":
                 findings = detect_privilege_grant(
                     data.get("iam_policies", []),
-                    data.get("audit_changes", []),
+                    changes,
                 )
             elif detector == "detect_firewall_exposure":
                 findings = detect_firewall_exposure(
                     data.get("vpc_firewall_rules", []),
-                    data.get("audit_changes", []),
+                    changes,
                 )
             elif detector == "detect_discovery_bursts":
                 findings = detect_discovery_bursts(data.get("log_entries", []))
             elif detector == "detect_anomalous_actor":
                 findings = detect_anomalous_actor(
-                    data.get("audit_changes", []),
+                    changes,
                     data.get("log_entries", []),
                 )
             elif detector == "enrich_with_enablers":
@@ -158,6 +175,8 @@ class TestFixtureGenerator(unittest.TestCase):
 
     def test_decoys_present(self):
         """Reverted-firewall pair and approved-external-viewer are present in haystack."""
+        sys.path.insert(0, str(REPO))
+        from gcp_policy_analyzer.loaders import load_audit_changes
         haystack = _load(INCIDENTS / "inscope_haystack.json")
         gt = _load(INCIDENTS / "inscope_ground_truth.json")
         decoys = gt.get("decoys", [])
@@ -165,29 +184,28 @@ class TestFixtureGenerator(unittest.TestCase):
         self.assertIn("reverted-dev-firewall", decoy_ids)
         self.assertIn("approved-external-viewer", decoy_ids)
 
-        # Verify the reverted firewall: open then closed back within 2h
-        changes = haystack.get("audit_changes", [])
+        # Derive Change objects from native log_entries
+        changes = load_audit_changes(haystack)
         fw_opens = [
             c for c in changes
-            if c.get("resource_type") == "firewall_rule"
-            and "0.0.0.0/0" in str(c.get("after", {}).get("sourceRanges", []))
-            and "decoy-revert" in c.get("resource", "")
+            if c.resource_type == "firewall_rule"
+            and "0.0.0.0/0" in str((c.after or {}).get("sourceRanges", []))
+            and "decoy-revert" in c.resource
         ]
         fw_closes = [
             c for c in changes
-            if c.get("resource_type") == "firewall_rule"
-            and "decoy-revert" in c.get("resource", "")
-            and "0.0.0.0/0" not in str(c.get("after", {}).get("sourceRanges", []))
-            and c.get("action") == "UPDATE"
+            if c.resource_type == "firewall_rule"
+            and "decoy-revert" in c.resource
+            and "0.0.0.0/0" not in str((c.after or {}).get("sourceRanges", []))
+            and c.action == "UPDATE"
         ]
         self.assertTrue(len(fw_opens) >= 1, "No decoy revert-open found")
         self.assertTrue(len(fw_closes) >= 1, "No decoy revert-close found")
 
-        # Verify approved external viewer present
+        # Verify approved external viewer present via log_entries
         ext_viewers = [
-            c for c in changes
-            if "approved-external-viewer" in c.get("principal", "")
-            or "approved-external-viewer" in str(c.get("after", {}))
+            le for le in haystack.get("log_entries", [])
+            if "approved-external-viewer" in str(le)
         ]
         self.assertTrue(len(ext_viewers) >= 1, "No approved-external-viewer event found")
 

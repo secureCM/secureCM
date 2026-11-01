@@ -66,6 +66,9 @@ class TestAnalyze(unittest.TestCase):
 
         # Out-of-window change (2026-10-21) must not appear in 7-day window
         # (anchor - 7d = 2026-10-24, so 2026-10-21 is excluded)
-        # total_changes in 7d should not count the 2026-10-21 entry
-        # We know fixture has 5 audit_changes; the 2026-10-21 one is outside 7d window
-        self.assertLessEqual(result_7d["stats"]["total_changes"], 4)
+        # The 7d window must have fewer changes than all time (which includes the 2026-10-21 entry)
+        result_all = self.analyze(self.data, end - timedelta(days=365), end)
+        self.assertLess(
+            result_7d["stats"]["total_changes"],
+            result_all["stats"]["total_changes"],
+        )

@@ -1,29 +1,32 @@
 {
-  "audit_changes": [
+  "iam_policies": [],
+  "log_entries": [
     {
-      "action": "UPDATE",
-      "after": {
-        "bindings": [
-          {
-            "members": [
-              "serviceAccount:attacker-sa@fake-proj.iam.gserviceaccount.com"
-            ],
-            "role": "roles/iam.serviceAccountTokenCreator"
+      "protoPayload": {
+        "authenticationInfo": {
+          "principalEmail": "admin@acme.example.com"
+        },
+        "methodName": "SetIamPolicy",
+        "request": {},
+        "requestMetadata": {
+          "callerIp": "10.1.0.1"
+        },
+        "resourceName": "folders/111111111111",
+        "serviceData": {
+          "policyDelta": {
+            "bindingDeltas": [
+              {
+                "action": "ADD",
+                "member": "serviceAccount:attacker-sa@fake-proj.iam.gserviceaccount.com",
+                "role": "roles/iam.serviceAccountTokenCreator"
+              }
+            ]
           }
-        ]
+        }
       },
-      "before": {
-        "bindings": []
-      },
-      "labels": {},
-      "principal": "admin@acme.example.com",
-      "resource": "folders/111111111111",
-      "resource_type": "iam_policy",
       "timestamp": "2026-09-15T00:00:00Z"
     }
   ],
-  "iam_policies": [],
-  "log_entries": [],
   "network_firewall_policies": [],
   "resources": [],
   "vpc_firewall_rules": []

@@ -1,6 +1,62 @@
 """Tests for attack_coverage.report — TDD per task-7-brief."""
 import copy
+import json
+import pathlib
 import unittest
+
+REPO = pathlib.Path(__file__).resolve().parent.parent
+INCIDENTS = REPO / "fixtures" / "incidents"
+
+
+class TestNativeFixtureMigration(unittest.TestCase):
+    """Task-7-brief required tests: native fixtures, logs-only derivation, campaigns."""
+
+    def test_coverage_report_no_regressions_on_native(self):
+        """build_report() regressions == [] and not_covered == [] on native fixtures."""
+        from attack_coverage.report import build_report
+        r = build_report()
+        self.assertEqual(r["regressions"], [],
+                         f"Regressions on native fixtures: {r['regressions']}")
+        self.assertEqual(r["not_covered"], [],
+                         f"Not-covered items: {r['not_covered']}")
+
+    def test_every_change_derived_from_logs(self):
+        """Loaded haystack has NO top-level audit_changes key; changes come only from log_entries."""
+        with open(INCIDENTS / "inscope_haystack.json") as f:
+            haystack = json.load(f)
+        self.assertNotIn(
+            "audit_changes", haystack,
+            "Native haystack must not have a top-level audit_changes key",
+        )
+        self.assertIn(
+            "log_entries", haystack,
+            "Native haystack must have a log_entries key",
+        )
+        # Changes must derive successfully from log_entries
+        from gcp_policy_analyzer.loaders import load_audit_changes
+        changes = load_audit_changes(haystack)
+        self.assertGreater(len(changes), 0,
+                           "Expected changes derived from log_entries")
+
+    def test_six_campaigns_still_detected(self):
+        """run_detectors on native haystack still yields the six campaigns' technique ids."""
+        with open(INCIDENTS / "inscope_haystack.json") as f:
+            haystack = json.load(f)
+        from attack_coverage.signatures import run_detectors
+        findings = run_detectors(haystack)
+        technique_ids = {f.technique_id for f in findings}
+        # Ground-truth campaign techniques
+        expected = {
+            "T1098.003",  # campaign-a
+            "T1199",      # campaign-a + campaign-d
+            "T1562.007",  # campaign-b + campaign-c + campaign-f
+            "T1098",      # campaign-e
+        }
+        for tid in expected:
+            self.assertIn(
+                tid, technique_ids,
+                f"Expected technique {tid} from campaigns not found in findings {technique_ids}",
+            )
 
 
 class TestCoverageReport(unittest.TestCase):

@@ -1,29 +1,49 @@
 {
-  "audit_changes": [
+  "iam_policies": [],
+  "log_entries": [
     {
-      "action": "DELETE",
-      "after": null,
-      "before": {
-        "allowed": [
-          {
-            "IPProtocol": "tcp",
-            "ports": [
-              "443"
-            ]
+      "protoPayload": {
+        "authenticationInfo": {
+          "principalEmail": "bad-actor@acme.example.com"
+        },
+        "methodName": "compute.firewalls.insert",
+        "request": {
+          "allowed": [
+            {
+              "IPProtocol": "tcp",
+              "ports": [
+                "443"
+              ]
+            }
+          ],
+          "labels": {
+            "env": "prod"
           }
-        ]
+        },
+        "requestMetadata": {
+          "callerIp": "10.1.0.1"
+        },
+        "resourceName": "projects/fake-prod-003/global/firewalls/allow-internal",
+        "serviceData": {}
       },
-      "labels": {
-        "env": "prod"
+      "timestamp": "2026-09-14T23:00:00Z"
+    },
+    {
+      "protoPayload": {
+        "authenticationInfo": {
+          "principalEmail": "bad-actor@acme.example.com"
+        },
+        "methodName": "compute.firewalls.delete",
+        "request": {},
+        "requestMetadata": {
+          "callerIp": "10.1.0.1"
+        },
+        "resourceName": "projects/fake-prod-003/global/firewalls/allow-internal",
+        "serviceData": {}
       },
-      "principal": "bad-actor@acme.example.com",
-      "resource": "projects/fake-prod-003/global/firewalls/allow-internal",
-      "resource_type": "firewall_rule",
       "timestamp": "2026-09-15T00:00:00Z"
     }
   ],
-  "iam_policies": [],
-  "log_entries": [],
   "network_firewall_policies": [],
   "resources": [],
   "vpc_firewall_rules": []

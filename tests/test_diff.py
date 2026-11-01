@@ -90,8 +90,15 @@ class TestDiffPolicies(unittest.TestCase):
         """Test diffing IAM policies (keyed by resource, not name)."""
         diff_policies = self._diff_policies()
 
-        old_policies = copy.deepcopy(self.data["iam_policies"])
-        new_policies = copy.deepcopy(self.data["iam_policies"])
+        # Use inline normalized-shape dicts (diff_policies works on snapshot dicts keyed by 'resource')
+        old_policies = [
+            {
+                "resource": "projects/example-prod-project",
+                "labels": {"env": "prod"},
+                "bindings": [{"role": "roles/editor", "members": ["serviceAccount:sa@example.iam.gserviceaccount.com"]}],
+            }
+        ]
+        new_policies = copy.deepcopy(old_policies)
 
         # Modify bindings in existing policy (UPDATE)
         new_policies[0]["bindings"].append({

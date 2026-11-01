@@ -4,7 +4,8 @@ Usage:
     python generate.py                     # writes to fixtures/incidents/ (alongside this file)
     python generate.py --out-dir /tmp/foo  # writes to custom dir
 
-Every generated event uses resource_type in {iam_policy, firewall_rule, network_firewall_policy}.
+All changes are expressed as native Cloud Audit LogEntry objects under log_entries.
+No legacy audit_changes key is emitted.
 No wall-clock — ANCHOR is a fixed constant.
 """
 from __future__ import annotations
@@ -32,8 +33,63 @@ def _delta(**kw) -> timedelta:
     return timedelta(**kw)
 
 
+def _iam_log_entry(
+    resource: str,
+    principal: str,
+    timestamp: str,
+    add_bindings: list[dict] | None = None,
+    remove_bindings: list[dict] | None = None,
+    caller_ip: str = "10.1.0.1",
+) -> dict:
+    """Build a native SetIamPolicy LogEntry.
+
+    add_bindings/remove_bindings: list of {role, members:[...]} dicts.
+    Expanded into bindingDeltas with action ADD/REMOVE.
+    """
+    deltas: list[dict] = []
+    for b in (add_bindings or []):
+        for m in b.get("members", []):
+            deltas.append({"action": "ADD", "role": b["role"], "member": m})
+    for b in (remove_bindings or []):
+        for m in b.get("members", []):
+            deltas.append({"action": "REMOVE", "role": b["role"], "member": m})
+    return {
+        "protoPayload": {
+            "methodName": "SetIamPolicy",
+            "resourceName": resource,
+            "authenticationInfo": {"principalEmail": principal},
+            "requestMetadata": {"callerIp": caller_ip},
+            "serviceData": {"policyDelta": {"bindingDeltas": deltas}},
+            "request": {},
+        },
+        "timestamp": timestamp,
+    }
+
+
+def _fw_log_entry(
+    method: str,
+    resource: str,
+    principal: str,
+    timestamp: str,
+    request: dict | None = None,
+    caller_ip: str = "10.1.0.1",
+) -> dict:
+    """Build a native compute.firewalls.* or compute.networkFirewallPolicies.* LogEntry."""
+    return {
+        "protoPayload": {
+            "methodName": method,
+            "resourceName": resource,
+            "authenticationInfo": {"principalEmail": principal},
+            "requestMetadata": {"callerIp": caller_ip},
+            "serviceData": {},
+            "request": request or {},
+        },
+        "timestamp": timestamp,
+    }
+
+
 # ---------------------------------------------------------------------------
-# Per-technique small fixtures
+# Per-technique small fixtures (native log_entries only)
 # ---------------------------------------------------------------------------
 
 def _make_account_manipulation() -> dict:
@@ -42,26 +98,17 @@ def _make_account_manipulation() -> dict:
         "iam_policies": [],
         "vpc_firewall_rules": [],
         "network_firewall_policies": [],
-        "audit_changes": [
-            {
-                "resource": "folders/111111111111",
-                "resource_type": "iam_policy",
-                "action": "UPDATE",
-                "principal": "admin@acme.example.com",
-                "timestamp": _ts(ANCHOR),
-                "before": {"bindings": []},
-                "after": {
-                    "bindings": [
-                        {
-                            "role": "roles/iam.serviceAccountTokenCreator",
-                            "members": ["serviceAccount:attacker-sa@fake-proj.iam.gserviceaccount.com"],
-                        }
-                    ]
-                },
-                "labels": {},
-            }
+        "log_entries": [
+            _iam_log_entry(
+                resource="folders/111111111111",
+                principal="admin@acme.example.com",
+                timestamp=_ts(ANCHOR),
+                add_bindings=[{
+                    "role": "roles/iam.serviceAccountTokenCreator",
+                    "members": ["serviceAccount:attacker-sa@fake-proj.iam.gserviceaccount.com"],
+                }],
+            )
         ],
-        "log_entries": [],
         "resources": [],
     }
 
@@ -72,26 +119,17 @@ def _make_additional_cloud_roles() -> dict:
         "iam_policies": [],
         "vpc_firewall_rules": [],
         "network_firewall_policies": [],
-        "audit_changes": [
-            {
-                "resource": "folders/222222222222",
-                "resource_type": "iam_policy",
-                "action": "UPDATE",
-                "principal": "admin@acme.example.com",
-                "timestamp": _ts(ANCHOR),
-                "before": {"bindings": []},
-                "after": {
-                    "bindings": [
-                        {
-                            "role": "roles/owner",
-                            "members": ["user:ext-attacker@external.example.com"],
-                        }
-                    ]
-                },
-                "labels": {},
-            }
+        "log_entries": [
+            _iam_log_entry(
+                resource="folders/222222222222",
+                principal="admin@acme.example.com",
+                timestamp=_ts(ANCHOR),
+                add_bindings=[{
+                    "role": "roles/owner",
+                    "members": ["user:ext-attacker@external.example.com"],
+                }],
+            )
         ],
-        "log_entries": [],
         "resources": [],
     }
 
@@ -102,95 +140,90 @@ def _make_trusted_relationship() -> dict:
         "iam_policies": [],
         "vpc_firewall_rules": [],
         "network_firewall_policies": [],
-        "audit_changes": [
-            {
-                "resource": "projects/fake-prod-001",
-                "resource_type": "iam_policy",
-                "action": "UPDATE",
-                "principal": "admin@acme.example.com",
-                "timestamp": _ts(ANCHOR),
-                "before": {"bindings": []},
-                "after": {
-                    "bindings": [
-                        {
-                            "role": "roles/editor",
-                            "members": ["user:partner@external-partner.example.com"],
-                        }
-                    ]
-                },
-                "labels": {},
-            }
+        "log_entries": [
+            _iam_log_entry(
+                resource="projects/fake-prod-001",
+                principal="admin@acme.example.com",
+                timestamp=_ts(ANCHOR),
+                add_bindings=[{
+                    "role": "roles/editor",
+                    "members": ["user:partner@external-partner.example.com"],
+                }],
+            )
         ],
-        "log_entries": [],
         "resources": [],
     }
 
 
 def _make_impair_defenses() -> dict:
-    """T1562 — DELETE of a deny rule (RemovedProtection)."""
+    """T1562 — DELETE of a deny rule (RemovedProtection).
+
+    We insert the deny rule first so the replay has before-state, then delete it.
+    """
+    resource = "projects/fake-prod-001/global/firewalls/deny-all-egress"
+    principal = "infra-sa@fake-prod-001.iam.gserviceaccount.com"
+    t0 = _ts(ANCHOR - timedelta(hours=1))
+    t1 = _ts(ANCHOR)
     return {
         "iam_policies": [],
         "vpc_firewall_rules": [],
         "network_firewall_policies": [],
-        "audit_changes": [
-            {
-                "resource": "projects/fake-prod-001/global/firewalls/deny-all-egress",
-                "resource_type": "firewall_rule",
-                "action": "DELETE",
-                "principal": "infra-sa@fake-prod-001.iam.gserviceaccount.com",
-                "timestamp": _ts(ANCHOR),
-                "before": {"denied": [{"IPProtocol": "all"}], "direction": "EGRESS"},
-                "after": None,
-                "labels": {"env": "prod"},
-            }
+        "log_entries": [
+            _fw_log_entry("compute.firewalls.insert", resource, principal, t0,
+                          request={"denied": [{"IPProtocol": "all"}], "direction": "EGRESS",
+                                   "labels": {"env": "prod"}}),
+            _fw_log_entry("compute.firewalls.delete", resource, principal, t1),
         ],
-        "log_entries": [],
         "resources": [],
     }
 
 
 def _make_disable_cloud_firewall() -> dict:
-    """T1562.007 — source-range widened to 0.0.0.0/0."""
+    """T1562.007 — source-range widened to 0.0.0.0/0.
+
+    Insert with internal range, then patch to world-open.
+    """
+    resource = "projects/fake-prod-002/global/firewalls/allow-ssh"
+    principal = "infra-sa@fake-prod-002.iam.gserviceaccount.com"
+    t0 = _ts(ANCHOR - timedelta(hours=1))
+    t1 = _ts(ANCHOR)
     return {
         "iam_policies": [],
         "vpc_firewall_rules": [],
         "network_firewall_policies": [],
-        "audit_changes": [
-            {
-                "resource": "projects/fake-prod-002/global/firewalls/allow-ssh",
-                "resource_type": "firewall_rule",
-                "action": "UPDATE",
-                "principal": "infra-sa@fake-prod-002.iam.gserviceaccount.com",
-                "timestamp": _ts(ANCHOR),
-                "before": {"sourceRanges": ["10.0.0.0/8"], "allowed": [{"IPProtocol": "tcp", "ports": ["22"]}]},
-                "after": {"sourceRanges": ["0.0.0.0/0"], "allowed": [{"IPProtocol": "tcp", "ports": ["22"]}]},
-                "labels": {"env": "prod"},
-            }
+        "log_entries": [
+            _fw_log_entry("compute.firewalls.insert", resource, principal, t0,
+                          request={"sourceRanges": ["10.0.0.0/8"],
+                                   "allowed": [{"IPProtocol": "tcp", "ports": ["22"]}],
+                                   "labels": {"env": "prod"}}),
+            _fw_log_entry("compute.firewalls.patch", resource, principal, t1,
+                          request={"sourceRanges": ["0.0.0.0/0"],
+                                   "allowed": [{"IPProtocol": "tcp", "ports": ["22"]}],
+                                   "labels": {"env": "prod"}}),
         ],
-        "log_entries": [],
         "resources": [],
     }
 
 
 def _make_data_destruction() -> dict:
-    """T1485 — DELETE of an allow firewall rule (non-deny DELETE)."""
+    """T1485 — DELETE of an allow firewall rule (non-deny DELETE).
+
+    Insert then delete.
+    """
+    resource = "projects/fake-prod-003/global/firewalls/allow-internal"
+    principal = "bad-actor@acme.example.com"
+    t0 = _ts(ANCHOR - timedelta(hours=1))
+    t1 = _ts(ANCHOR)
     return {
         "iam_policies": [],
         "vpc_firewall_rules": [],
         "network_firewall_policies": [],
-        "audit_changes": [
-            {
-                "resource": "projects/fake-prod-003/global/firewalls/allow-internal",
-                "resource_type": "firewall_rule",
-                "action": "DELETE",
-                "principal": "bad-actor@acme.example.com",
-                "timestamp": _ts(ANCHOR),
-                "before": {"allowed": [{"IPProtocol": "tcp", "ports": ["443"]}]},
-                "after": None,
-                "labels": {"env": "prod"},
-            }
+        "log_entries": [
+            _fw_log_entry("compute.firewalls.insert", resource, principal, t0,
+                          request={"allowed": [{"IPProtocol": "tcp", "ports": ["443"]}],
+                                   "labels": {"env": "prod"}}),
+            _fw_log_entry("compute.firewalls.delete", resource, principal, t1),
         ],
-        "log_entries": [],
         "resources": [],
     }
 
@@ -211,7 +244,6 @@ def _make_cloud_infra_discovery() -> dict:
         "iam_policies": [],
         "vpc_firewall_rules": [],
         "network_firewall_policies": [],
-        "audit_changes": [],
         "log_entries": entries,
         "resources": [],
     }
@@ -233,7 +265,6 @@ def _make_cloud_groups_discovery() -> dict:
         "iam_policies": [],
         "vpc_firewall_rules": [],
         "network_firewall_policies": [],
-        "audit_changes": [],
         "log_entries": entries,
         "resources": [],
     }
@@ -242,8 +273,7 @@ def _make_cloud_groups_discovery() -> dict:
 def _make_cloud_accounts() -> dict:
     """T1078.004 — actors sharing a /24 subnet trigger anomalous_subnets detection.
 
-    No audit_changes (dict changes would break correlate_by_actor which expects Change objects).
-    The log entries alone are sufficient: actor-a and actor-b share 10.99.1.0/24,
+    Log entries alone are sufficient: actor-a and actor-b share 10.99.1.0/24,
     which surfaces as anomalous_subnets for both.
     """
     t = ANCHOR
@@ -277,7 +307,6 @@ def _make_cloud_accounts() -> dict:
         "iam_policies": [],
         "vpc_firewall_rules": [],
         "network_firewall_policies": [],
-        "audit_changes": [],
         "log_entries": entries,
         "resources": [],
     }
@@ -322,58 +351,54 @@ def _rand_ts(rng: random.Random, base: datetime, window_days: int = 45) -> datet
     return base + offset
 
 
-def _noise_iam_change(rng: random.Random, t: datetime, project: str) -> dict:
+def _noise_iam_log(rng: random.Random, t: datetime, project: str) -> dict:
+    """Noise IAM change as native SetIamPolicy LogEntry."""
     role = rng.choice(["roles/viewer", "roles/logging.viewer", "roles/monitoring.viewer"])
     principal = rng.choice(CORP_PRINCIPALS)
     member = rng.choice([f"serviceAccount:worker-sa@{project}.iam.gserviceaccount.com",
                          "user:bob@acme.example.com"])
-    return {
-        "resource": f"projects/{project}",
-        "resource_type": "iam_policy",
-        "action": "UPDATE",
-        "principal": principal,
-        "timestamp": _ts(t),
-        "before": {"bindings": [{"role": role, "members": []}]},
-        "after": {"bindings": [{"role": role, "members": [member]}]},
-        "labels": {"env": "prod" if "prod" in project else "dev"},
-    }
+    return _iam_log_entry(
+        resource=f"projects/{project}",
+        principal=principal,
+        timestamp=_ts(t),
+        caller_ip=rng.choice(CORP_IPS),
+        add_bindings=[{"role": role, "members": [member]}],
+    )
 
 
-def _noise_fw_change(rng: random.Random, t: datetime, project: str) -> dict:
+def _noise_fw_log(rng: random.Random, t: datetime, project: str) -> dict:
+    """Noise firewall patch as native compute.firewalls.patch LogEntry (baseline gap = OK)."""
     rule_name = f"allow-internal-{rng.randint(100, 999)}"
-    return {
-        "resource": f"projects/{project}/global/firewalls/{rule_name}",
-        "resource_type": "firewall_rule",
-        "action": "UPDATE",
-        "principal": rng.choice(CORP_PRINCIPALS),
-        "timestamp": _ts(t),
-        "before": {"sourceRanges": [rng.choice(INTERNAL_RANGES)],
-                   "allowed": [{"IPProtocol": "tcp", "ports": ["443"]}]},
-        "after": {"sourceRanges": [rng.choice(INTERNAL_RANGES)],
-                  "allowed": [{"IPProtocol": "tcp", "ports": ["443"]}]},
-        "labels": {},
-    }
+    return _fw_log_entry(
+        method="compute.firewalls.patch",
+        resource=f"projects/{project}/global/firewalls/{rule_name}",
+        principal=rng.choice(CORP_PRINCIPALS),
+        timestamp=_ts(t),
+        request={
+            "sourceRanges": [rng.choice(INTERNAL_RANGES)],
+            "allowed": [{"IPProtocol": "tcp", "ports": ["443"]}],
+        },
+        caller_ip=rng.choice(CORP_IPS),
+    )
 
 
-def _noise_nfp_change(rng: random.Random, t: datetime, project: str) -> dict:
-    """Routine network_firewall_policy noise — internal-only rule tweak, never world-open."""
+def _noise_nfp_log(rng: random.Random, t: datetime, project: str) -> dict:
+    """Noise NFP patch as native compute.networkFirewallPolicies.patchRule LogEntry."""
     rule_name = f"corp-policy-{rng.randint(100, 999)}"
     src = rng.choice(INTERNAL_RANGES)
-    return {
-        "resource": f"projects/{project}/global/firewallPolicies/{rule_name}",
-        "resource_type": "network_firewall_policy",
-        "action": "UPDATE",
-        "principal": rng.choice(CORP_PRINCIPALS),
-        "timestamp": _ts(t),
-        "before": {"rules": [{"priority": 1000, "direction": "INGRESS", "action": "allow",
-                               "match": {"srcIpRanges": [src]}}]},
-        "after": {"rules": [{"priority": 1000, "direction": "INGRESS", "action": "allow",
-                              "match": {"srcIpRanges": [rng.choice(INTERNAL_RANGES)]}}]},
-        "labels": {},
-    }
+    return _fw_log_entry(
+        method="compute.networkFirewallPolicies.patchRule",
+        resource=f"projects/{project}/global/firewallPolicies/{rule_name}",
+        principal=rng.choice(CORP_PRINCIPALS),
+        timestamp=_ts(t),
+        request={"rules": [{"priority": 1000, "direction": "INGRESS", "action": "allow",
+                             "match": {"srcIpRanges": [src]}}]},
+        caller_ip=rng.choice(CORP_IPS),
+    )
 
 
 def _noise_log(rng: random.Random, t: datetime, project: str) -> dict:
+    """Flat (pre-flattened) discovery/read log entry for actor correlation noise."""
     method = rng.choice(["v1.compute.firewalls.patch", "SetIamPolicy", "v1.compute.firewalls.get"])
     return {
         "methodName": method,
@@ -386,23 +411,22 @@ def _noise_log(rng: random.Random, t: datetime, project: str) -> dict:
 
 def _make_haystack(rng: random.Random) -> tuple[dict, dict]:
     """Generate inscope_haystack + ground_truth. Returns (haystack, ground_truth)."""
-    audit_changes: list[dict] = []
     log_entries: list[dict] = []
 
-    # --- Noise: ~3100+ routine changes across 45 days ---
+    # --- Noise: ~3400+ routine log entries across 45 days ---
     base = ANCHOR
     for _ in range(2200):
         t = _rand_ts(rng, base, 45)
         p = _rand_project(rng)
-        audit_changes.append(_noise_iam_change(rng, t, p))
+        log_entries.append(_noise_iam_log(rng, t, p))
     for _ in range(900):
         t = _rand_ts(rng, base, 45)
         p = _rand_project(rng)
-        audit_changes.append(_noise_fw_change(rng, t, p))
+        log_entries.append(_noise_fw_log(rng, t, p))
     for _ in range(300):
         t = _rand_ts(rng, base, 45)
         p = _rand_project(rng)
-        audit_changes.append(_noise_nfp_change(rng, t, p))
+        log_entries.append(_noise_nfp_log(rng, t, p))
     for _ in range(500):
         t = _rand_ts(rng, base, 45)
         p = _rand_project(rng)
@@ -413,42 +437,22 @@ def _make_haystack(rng: random.Random) -> tuple[dict, dict]:
     # marker: "campaign-a-ext-attacker"
     # -------------------------------------------------------------------------
     t_a = base + timedelta(days=5, hours=2)
-    audit_changes.append({
-        "resource": FOLDER_ID,
-        "resource_type": "iam_policy",
-        "action": "UPDATE",
-        "principal": "campaign-a-ext-attacker@external-domain.example.com",
-        "timestamp": _ts(t_a),
-        "before": {"bindings": []},
-        "after": {
-            "bindings": [
-                {
-                    "role": "roles/owner",
-                    "members": ["user:campaign-a-ext-attacker@external-domain.example.com"],
-                }
-            ]
-        },
-        "labels": {"env": "prod"},
-    })
+    log_entries.append(_iam_log_entry(
+        resource=FOLDER_ID,
+        principal="campaign-a-ext-attacker@external-domain.example.com",
+        timestamp=_ts(t_a),
+        add_bindings=[{"role": "roles/owner",
+                       "members": ["user:campaign-a-ext-attacker@external-domain.example.com"]}],
+    ))
     # Cascade: same actor grants owner on two prod projects
     for i, proj in enumerate(PROD_PROJECTS[:2]):
-        audit_changes.append({
-            "resource": f"projects/{proj}",
-            "resource_type": "iam_policy",
-            "action": "UPDATE",
-            "principal": "campaign-a-ext-attacker@external-domain.example.com",
-            "timestamp": _ts(t_a + timedelta(hours=i + 1)),
-            "before": {"bindings": []},
-            "after": {
-                "bindings": [
-                    {
-                        "role": "roles/owner",
-                        "members": ["user:campaign-a-ext-attacker@external-domain.example.com"],
-                    }
-                ]
-            },
-            "labels": {"env": "prod"},
-        })
+        log_entries.append(_iam_log_entry(
+            resource=f"projects/{proj}",
+            principal="campaign-a-ext-attacker@external-domain.example.com",
+            timestamp=_ts(t_a + timedelta(hours=i + 1)),
+            add_bindings=[{"role": "roles/owner",
+                           "members": ["user:campaign-a-ext-attacker@external-domain.example.com"]}],
+        ))
 
     # -------------------------------------------------------------------------
     # Campaign (b): firewall world-open on admin ports across prod from rotating IPs
@@ -459,41 +463,41 @@ def _make_haystack(rng: random.Random) -> tuple[dict, dict]:
     for i, proj in enumerate(PROD_PROJECTS):
         attacker_ip = attacker_ips_b[i % len(attacker_ips_b)]
         rule_name = f"campaign-b-fw-attacker-ssh-{proj}"
-        audit_changes.append({
-            "resource": f"projects/{proj}/global/firewalls/{rule_name}",
-            "resource_type": "firewall_rule",
-            "action": "UPDATE",
-            "principal": f"infra-sa@{proj}.iam.gserviceaccount.com",
-            "timestamp": _ts(t_b + timedelta(hours=i * 2)),
-            "before": {"sourceRanges": ["10.0.0.0/8"],
-                       "allowed": [{"IPProtocol": "tcp", "ports": ["22"]}]},
-            "after": {"sourceRanges": ["0.0.0.0/0"],
-                      "allowed": [{"IPProtocol": "tcp", "ports": ["22"]}]},
-            "labels": {"env": "prod"},
-        })
-        log_entries.append({
-            "methodName": "v1.compute.firewalls.patch",
-            "principalEmail": f"infra-sa@{proj}.iam.gserviceaccount.com",
-            "callerIp": attacker_ip,
-            "timestamp": _ts(t_b + timedelta(hours=i * 2)),
-            "resourceName": f"projects/{proj}/global/firewalls/{rule_name}",
-        })
+        resource = f"projects/{proj}/global/firewalls/{rule_name}"
+        principal = f"infra-sa@{proj}.iam.gserviceaccount.com"
+        t_insert = _ts(t_b + timedelta(hours=i * 2) - timedelta(minutes=5))
+        t_patch  = _ts(t_b + timedelta(hours=i * 2))
+        log_entries.append(_fw_log_entry(
+            "compute.firewalls.insert", resource, principal, t_insert,
+            request={"sourceRanges": ["10.0.0.0/8"],
+                     "allowed": [{"IPProtocol": "tcp", "ports": ["22"]}],
+                     "labels": {"env": "prod"}},
+            caller_ip=attacker_ip,
+        ))
+        log_entries.append(_fw_log_entry(
+            "compute.firewalls.patch", resource, principal, t_patch,
+            request={"sourceRanges": ["0.0.0.0/0"],
+                     "allowed": [{"IPProtocol": "tcp", "ports": ["22"]}],
+                     "labels": {"env": "prod"}},
+            caller_ip=attacker_ip,
+        ))
 
     # -------------------------------------------------------------------------
     # Campaign (c): priority-shadow of a deny-egress rule (T1562.007)
     # marker: in resource name "campaign-c-shadow"
     # -------------------------------------------------------------------------
     t_c = base + timedelta(days=20, hours=6)
-    audit_changes.append({
-        "resource": "projects/fake-prod-003/global/firewalls/campaign-c-shadow-deny-egress",
-        "resource_type": "firewall_rule",
-        "action": "UPDATE",
-        "principal": "bad-actor@acme.example.com",
-        "timestamp": _ts(t_c),
-        "before": {"denied": [{"IPProtocol": "all"}], "priority": 500},
-        "after": {"denied": [{"IPProtocol": "all"}], "priority": 900},
-        "labels": {"env": "prod"},
-    })
+    resource_c = "projects/fake-prod-003/global/firewalls/campaign-c-shadow-deny-egress"
+    principal_c = "bad-actor@acme.example.com"
+    log_entries.append(_fw_log_entry(
+        "compute.firewalls.insert", resource_c, principal_c,
+        _ts(t_c - timedelta(minutes=10)),
+        request={"denied": [{"IPProtocol": "all"}], "priority": 500, "labels": {"env": "prod"}},
+    ))
+    log_entries.append(_fw_log_entry(
+        "compute.firewalls.patch", resource_c, principal_c, _ts(t_c),
+        request={"denied": [{"IPProtocol": "all"}], "priority": 900, "labels": {"env": "prod"}},
+    ))
 
     # -------------------------------------------------------------------------
     # Campaign (d): external-partner editor/owner grant across projects (T1199)
@@ -501,46 +505,28 @@ def _make_haystack(rng: random.Random) -> tuple[dict, dict]:
     # -------------------------------------------------------------------------
     t_d = base + timedelta(days=28, hours=1)
     for i, proj in enumerate(PROD_PROJECTS[:3]):
-        audit_changes.append({
-            "resource": f"projects/{proj}",
-            "resource_type": "iam_policy",
-            "action": "UPDATE",
-            "principal": "campaign-d-partner@external-partner.example.com",
-            "timestamp": _ts(t_d + timedelta(hours=i)),
-            "before": {"bindings": []},
-            "after": {
-                "bindings": [
-                    {
-                        "role": "roles/editor",
-                        "members": ["user:campaign-d-partner@external-partner.example.com"],
-                    }
-                ]
-            },
-            "labels": {"env": "prod"},
-        })
+        log_entries.append(_iam_log_entry(
+            resource=f"projects/{proj}",
+            principal="campaign-d-partner@external-partner.example.com",
+            timestamp=_ts(t_d + timedelta(hours=i)),
+            add_bindings=[{"role": "roles/editor",
+                           "members": ["user:campaign-d-partner@external-partner.example.com"]}],
+        ))
 
     # -------------------------------------------------------------------------
     # Campaign (e): direct folder-scope owner/token-creator binding to SA (T1098)
     # marker: "campaign-e-sa-owner" in principal field
     # -------------------------------------------------------------------------
     t_e = base + timedelta(days=35, hours=4)
-    audit_changes.append({
-        "resource": FOLDER_ID,
-        "resource_type": "iam_policy",
-        "action": "UPDATE",
-        "principal": "campaign-e-sa-owner@acme.example.com",
-        "timestamp": _ts(t_e),
-        "before": {"bindings": []},
-        "after": {
-            "bindings": [
-                {
-                    "role": "roles/iam.serviceAccountTokenCreator",
-                    "members": ["serviceAccount:priv-sa@fake-prod-001.iam.gserviceaccount.com"],
-                }
-            ]
-        },
-        "labels": {"env": "prod"},
-    })
+    log_entries.append(_iam_log_entry(
+        resource=FOLDER_ID,
+        principal="campaign-e-sa-owner@acme.example.com",
+        timestamp=_ts(t_e),
+        add_bindings=[{
+            "role": "roles/iam.serviceAccountTokenCreator",
+            "members": ["serviceAccount:priv-sa@fake-prod-001.iam.gserviceaccount.com"],
+        }],
+    ))
 
     # -------------------------------------------------------------------------
     # Campaign (f): network_firewall_policy world-open allow across prod (T1562.007)
@@ -549,133 +535,118 @@ def _make_haystack(rng: random.Random) -> tuple[dict, dict]:
     t_f = base + timedelta(days=38, hours=5)
     for i, proj in enumerate(PROD_PROJECTS[:3]):
         policy_name = f"campaign-f-nfp-attacker-policy-{proj}"
-        audit_changes.append({
-            "resource": f"projects/{proj}/global/firewallPolicies/{policy_name}",
-            "resource_type": "network_firewall_policy",
-            "action": "UPDATE",
-            "principal": f"infra-sa@{proj}.iam.gserviceaccount.com",
-            "timestamp": _ts(t_f + timedelta(hours=i)),
-            "before": {"rules": [{"priority": 1000, "direction": "INGRESS", "action": "allow",
-                                   "match": {"srcIpRanges": ["10.0.0.0/8"]}}]},
-            "after": {"rules": [{"priority": 1000, "direction": "INGRESS", "action": "allow",
-                                  "match": {"srcIpRanges": ["0.0.0.0/0"]}}]},
-            "labels": {"env": "prod"},
-        })
+        resource_f = f"projects/{proj}/global/firewallPolicies/{policy_name}"
+        principal_f = f"infra-sa@{proj}.iam.gserviceaccount.com"
+        # addRule = UPDATE-like with no prior insert, gives baseline gap → before=None
+        log_entries.append(_fw_log_entry(
+            "compute.networkFirewallPolicies.addRule", resource_f, principal_f,
+            _ts(t_f + timedelta(hours=i)),
+            request={"rules": [{"priority": 1000, "direction": "INGRESS", "action": "allow",
+                                 "match": {"srcIpRanges": ["0.0.0.0/0"]}}]},
+        ))
 
     # -------------------------------------------------------------------------
     # Decoy 1: reverted dev firewall — open to 0.0.0.0/0 then back to internal 2h later
     # -------------------------------------------------------------------------
     t_decoy1 = base + timedelta(days=8, hours=9)
-    audit_changes.append({
-        "resource": "projects/fake-dev-001/global/firewalls/decoy-revert-dev-fw",
-        "resource_type": "firewall_rule",
-        "action": "UPDATE",
-        "principal": "carol@acme.example.com",
-        "timestamp": _ts(t_decoy1),
-        "before": {"sourceRanges": ["10.0.0.0/8"],
-                   "allowed": [{"IPProtocol": "tcp", "ports": ["8080"]}]},
-        "after": {"sourceRanges": ["0.0.0.0/0"],
-                  "allowed": [{"IPProtocol": "tcp", "ports": ["8080"]}]},
-        "labels": {"env": "dev"},
-    })
+    resource_d1 = "projects/fake-dev-001/global/firewalls/decoy-revert-dev-fw"
+    principal_d1 = "carol@acme.example.com"
+    log_entries.append(_fw_log_entry(
+        "compute.firewalls.insert", resource_d1, principal_d1,
+        _ts(t_decoy1 - timedelta(minutes=5)),
+        request={"sourceRanges": ["10.0.0.0/8"],
+                 "allowed": [{"IPProtocol": "tcp", "ports": ["8080"]}],
+                 "labels": {"env": "dev"}},
+    ))
+    log_entries.append(_fw_log_entry(
+        "compute.firewalls.patch", resource_d1, principal_d1, _ts(t_decoy1),
+        request={"sourceRanges": ["0.0.0.0/0"],
+                 "allowed": [{"IPProtocol": "tcp", "ports": ["8080"]}],
+                 "labels": {"env": "dev"}},
+    ))
     # Revert 2h later
-    audit_changes.append({
-        "resource": "projects/fake-dev-001/global/firewalls/decoy-revert-dev-fw",
-        "resource_type": "firewall_rule",
-        "action": "UPDATE",
-        "principal": "carol@acme.example.com",
-        "timestamp": _ts(t_decoy1 + timedelta(hours=2)),
-        "before": {"sourceRanges": ["0.0.0.0/0"],
-                   "allowed": [{"IPProtocol": "tcp", "ports": ["8080"]}]},
-        "after": {"sourceRanges": ["10.0.0.0/8"],
-                  "allowed": [{"IPProtocol": "tcp", "ports": ["8080"]}]},
-        "labels": {"env": "dev"},
-    })
+    log_entries.append(_fw_log_entry(
+        "compute.firewalls.patch", resource_d1, principal_d1,
+        _ts(t_decoy1 + timedelta(hours=2)),
+        request={"sourceRanges": ["10.0.0.0/8"],
+                 "allowed": [{"IPProtocol": "tcp", "ports": ["8080"]}],
+                 "labels": {"env": "dev"}},
+    ))
 
     # -------------------------------------------------------------------------
     # Decoy 2: approved external viewer (read-only in staging)
     # -------------------------------------------------------------------------
     t_decoy2 = base + timedelta(days=15, hours=11)
-    audit_changes.append({
-        "resource": "projects/fake-staging-001",
-        "resource_type": "iam_policy",
-        "action": "UPDATE",
-        "principal": "approved-external-viewer@trusted-vendor.example.com",
-        "timestamp": _ts(t_decoy2),
-        "before": {"bindings": []},
-        "after": {
-            "bindings": [
-                {
-                    "role": "roles/viewer",
-                    "members": ["user:approved-external-viewer@trusted-vendor.example.com"],
-                }
-            ]
-        },
-        "labels": {"env": "staging"},
-    })
+    log_entries.append(_iam_log_entry(
+        resource="projects/fake-staging-001",
+        principal="approved-external-viewer@trusted-vendor.example.com",
+        timestamp=_ts(t_decoy2),
+        add_bindings=[{
+            "role": "roles/viewer",
+            "members": ["user:approved-external-viewer@trusted-vendor.example.com"],
+        }],
+    ))
 
     # -------------------------------------------------------------------------
     # Decoy 3: expected staging owner-SA
     # -------------------------------------------------------------------------
     t_decoy3 = base + timedelta(days=22, hours=7)
-    audit_changes.append({
-        "resource": "projects/fake-staging-002",
-        "resource_type": "iam_policy",
-        "action": "UPDATE",
-        "principal": "carol@acme.example.com",
-        "timestamp": _ts(t_decoy3),
-        "before": {"bindings": []},
-        "after": {
-            "bindings": [
-                {
-                    "role": "roles/owner",
-                    "members": ["serviceAccount:staging-owner-sa@fake-staging-002.iam.gserviceaccount.com"],
-                }
-            ]
-        },
-        "labels": {"env": "staging"},
-    })
+    log_entries.append(_iam_log_entry(
+        resource="projects/fake-staging-002",
+        principal="carol@acme.example.com",
+        timestamp=_ts(t_decoy3),
+        add_bindings=[{
+            "role": "roles/owner",
+            "members": ["serviceAccount:staging-owner-sa@fake-staging-002.iam.gserviceaccount.com"],
+        }],
+    ))
 
     # -------------------------------------------------------------------------
     # Decoy 4: benign internal-range firewall widen
     # -------------------------------------------------------------------------
     t_decoy4 = base + timedelta(days=30, hours=14)
-    audit_changes.append({
-        "resource": "projects/fake-prod-004/global/firewalls/allow-corp-expanded",
-        "resource_type": "firewall_rule",
-        "action": "UPDATE",
-        "principal": "deploy-sa@fake-prod-001.iam.gserviceaccount.com",
-        "timestamp": _ts(t_decoy4),
-        "before": {"sourceRanges": ["10.1.0.0/24"],
-                   "allowed": [{"IPProtocol": "tcp", "ports": ["443"]}]},
-        "after": {"sourceRanges": ["10.0.0.0/8"],
-                  "allowed": [{"IPProtocol": "tcp", "ports": ["443"]}]},
-        "labels": {"env": "prod"},
-    })
+    resource_d4 = "projects/fake-prod-004/global/firewalls/allow-corp-expanded"
+    principal_d4 = "deploy-sa@fake-prod-001.iam.gserviceaccount.com"
+    log_entries.append(_fw_log_entry(
+        "compute.firewalls.insert", resource_d4, principal_d4,
+        _ts(t_decoy4 - timedelta(minutes=5)),
+        request={"sourceRanges": ["10.1.0.0/24"],
+                 "allowed": [{"IPProtocol": "tcp", "ports": ["443"]}],
+                 "labels": {"env": "prod"}},
+    ))
+    log_entries.append(_fw_log_entry(
+        "compute.firewalls.patch", resource_d4, principal_d4, _ts(t_decoy4),
+        request={"sourceRanges": ["10.0.0.0/8"],
+                 "allowed": [{"IPProtocol": "tcp", "ports": ["443"]}],
+                 "labels": {"env": "prod"}},
+    ))
 
-    # Build IAM policies snapshot (static)
+    # Build IAM policies snapshot (static) — native asset-wrapped shape
     iam_policies = [
         {
-            "resource": f"projects/{p}",
-            "labels": {"env": "prod" if "prod" in p else ("staging" if "staging" in p else "dev")},
-            "bindings": [
-                {"role": "roles/viewer",
-                 "members": [f"serviceAccount:deploy-sa@{p}.iam.gserviceaccount.com"]}
-            ],
+            "name": f"//cloudresourcemanager.googleapis.com/projects/{p}",
+            "asset_type": "cloudresourcemanager.googleapis.com/Project",
+            "iam_policy": {
+                "bindings": [
+                    {"role": "roles/viewer",
+                     "members": [f"serviceAccount:deploy-sa@{p}.iam.gserviceaccount.com"]}
+                ]
+            },
         }
         for p in PROJECTS
     ]
     iam_policies.append({
-        "resource": FOLDER_ID,
-        "labels": {},
-        "bindings": [{"role": "roles/viewer", "members": ["user:alice@acme.example.com"]}],
+        "name": f"//cloudresourcemanager.googleapis.com/{FOLDER_ID}",
+        "asset_type": "cloudresourcemanager.googleapis.com/Folder",
+        "iam_policy": {
+            "bindings": [{"role": "roles/viewer", "members": ["user:alice@acme.example.com"]}]
+        },
     })
 
     haystack = {
         "iam_policies": iam_policies,
         "vpc_firewall_rules": [],
         "network_firewall_policies": [],
-        "audit_changes": audit_changes,
         "log_entries": log_entries,
         "resources": [{"name": f"subnet-{p}", "network": "default", "project": p} for p in PROJECTS],
     }
@@ -723,17 +694,23 @@ def _make_haystack(rng: random.Random) -> tuple[dict, dict]:
             {
                 "id": "reverted-dev-firewall",
                 "description": "0.0.0.0/0 opened then reverted to internal within 2h in dev",
-                "should_not_alert": True,
+                "fires_but_benign": True,
+                "resource": "projects/fake-dev-001/global/firewalls/decoy-revert-dev-fw",
+                "expected_technique": "T1562.007",
             },
             {
                 "id": "approved-external-viewer",
                 "description": "Approved read-only external viewer in staging",
-                "should_not_alert": True,
+                "fires_but_benign": True,
+                "resource": "projects/fake-staging-001",
+                "expected_technique": "T1199",
             },
             {
                 "id": "expected-staging-owner-sa",
                 "description": "Expected staging service-account owner",
-                "should_not_alert": True,
+                "fires_but_benign": True,
+                "resource": "projects/fake-staging-002",
+                "expected_technique": "T1098.003",
             },
             {
                 "id": "benign-internal-range-widen",

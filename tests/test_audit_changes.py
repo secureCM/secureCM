@@ -124,9 +124,9 @@ class TestEnablerMethodsEmitNoIamChange(unittest.TestCase):
         self.assertEqual(len(changes), 0)
 
 
-class TestLegacyAuditChangesPath(unittest.TestCase):
-    def test_legacy_audit_changes_key_still_works(self):
-        """data with audit_changes key → legacy path, no log_entries needed."""
+class TestNativeOnlyNoLegacyKey(unittest.TestCase):
+    def test_no_legacy_audit_changes_key(self):
+        """data with ONLY audit_changes key (no log_entries) → 0 Changes (legacy path gone)."""
         data = {"audit_changes": [{
             "resource": "projects/p",
             "resource_type": "iam_policy",
@@ -136,9 +136,9 @@ class TestLegacyAuditChangesPath(unittest.TestCase):
             "before": {"bindings": []},
             "after": {"bindings": [{"role": "roles/viewer", "members": ["user:u@example.com"]}]},
         }]}
+        # Legacy key is ignored — native path only; no log_entries → 0 changes
         changes = load_audit_changes(data)
-        self.assertEqual(len(changes), 1)
-        self.assertEqual(changes[0].resource, "projects/p")
+        self.assertEqual(len(changes), 0)
 
 
 # ---------------------------------------------------------------------------

@@ -1,26 +1,29 @@
 {
   "iam_policies": [
     {
-      "resource": "projects/example-prod-project",
-      "labels": {"env": "prod"},
-      "bindings": [
-        {
-          "role": "roles/editor",
-          "members": [
-            "serviceAccount:terraform-deployer@example-prod-project.iam.gserviceaccount.com"
-          ]
-        },
-        {
-          "role": "roles/owner",
-          "members": [
-            "serviceAccount:sa-demo@example-prod-project.iam.gserviceaccount.com"
-          ]
-        }
-      ]
+      "name": "//cloudresourcemanager.googleapis.com/projects/example-prod-project",
+      "asset_type": "cloudresourcemanager.googleapis.com/Project",
+      "iam_policy": {
+        "bindings": [
+          {
+            "role": "roles/editor",
+            "members": [
+              "serviceAccount:terraform-deployer@example-prod-project.iam.gserviceaccount.com"
+            ]
+          },
+          {
+            "role": "roles/owner",
+            "members": [
+              "serviceAccount:sa-demo@example-prod-project.iam.gserviceaccount.com"
+            ]
+          }
+        ]
+      }
     }
   ],
   "vpc_firewall_rules": [
     {
+      "kind": "compute#firewall",
       "name": "prod-allow-tcp-8080",
       "network": "projects/example-prod-project/global/networks/prod-network",
       "direction": "INGRESS",
@@ -33,6 +36,7 @@
       "labels": {"env": "prod"}
     },
     {
+      "kind": "compute#firewall",
       "name": "prod-deny-all-egress",
       "network": "projects/example-prod-project/global/networks/prod-network",
       "direction": "EGRESS",
@@ -47,8 +51,8 @@
   ],
   "network_firewall_policies": [
     {
+      "kind": "compute#firewallPolicy",
       "name": "prod-network-policy",
-      "region": null,
       "rules": [
         {
           "priority": 1000,
@@ -61,79 +65,138 @@
       ]
     }
   ],
-  "audit_changes": [
-    {
-      "resource": "projects/example-prod-project/global/firewalls/prod-allow-tcp-8080",
-      "resource_type": "firewall_rule",
-      "action": "UPDATE",
-      "principal": "terraform-deployer@example-prod-project.iam.gserviceaccount.com",
-      "timestamp": "2026-10-30T16:22:41Z",
-      "before": {"sourceRanges": ["10.0.0.0/8"]},
-      "after": {"sourceRanges": ["0.0.0.0/0"]},
-      "labels": {"env": "prod"}
-    },
-    {
-      "resource": "projects/example-prod-project/global/firewalls/prod-deny-all-egress",
-      "resource_type": "firewall_rule",
-      "action": "DELETE",
-      "principal": "terraform-deployer@example-prod-project.iam.gserviceaccount.com",
-      "timestamp": "2026-10-30T16:23:05Z",
-      "before": {"direction": "EGRESS", "denied": [{"IPProtocol": "all"}]},
-      "after": null,
-      "labels": {"env": "prod"}
-    },
-    {
-      "resource": "projects/example-prod-project",
-      "resource_type": "iam_policy",
-      "action": "UPDATE",
-      "principal": "terraform-deployer@example-prod-project.iam.gserviceaccount.com",
-      "timestamp": "2026-10-27T09:15:00Z",
-      "before": {"bindings": []},
-      "after": {
-        "bindings": [
-          {
-            "role": "roles/owner",
-            "members": ["serviceAccount:sa-demo@example-prod-project.iam.gserviceaccount.com"]
-          }
-        ]
-      },
-      "labels": {}
-    },
-    {
-      "resource": "projects/example-prod-project/global/firewalls/prod-allow-tcp-8080",
-      "resource_type": "firewall_rule",
-      "action": "UPDATE",
-      "principal": "alice@example.com",
-      "timestamp": "2026-10-30T11:02:10Z",
-      "before": {"description": ""},
-      "after": {"description": "Updated description only"},
-      "labels": {}
-    },
-    {
-      "resource": "projects/example-prod-project/global/firewalls/old-rule",
-      "resource_type": "firewall_rule",
-      "action": "UPDATE",
-      "principal": "alice@example.com",
-      "timestamp": "2026-10-21T08:00:00Z",
-      "before": {"priority": 900},
-      "after": {"priority": 1000},
-      "labels": {}
-    }
-  ],
   "log_entries": [
     {
-      "methodName": "v1.compute.firewalls.patch",
-      "principalEmail": "terraform-deployer@example-prod-project.iam.gserviceaccount.com",
-      "callerIp": "203.0.113.10",
-      "timestamp": "2026-10-30T16:22:41Z",
-      "resourceName": "projects/example-prod-project/global/firewalls/prod-allow-tcp-8080"
+      "protoPayload": {
+        "methodName": "compute.firewalls.insert",
+        "resourceName": "projects/example-prod-project/global/firewalls/prod-allow-tcp-8080",
+        "authenticationInfo": {
+          "principalEmail": "terraform-deployer@example-prod-project.iam.gserviceaccount.com"
+        },
+        "requestMetadata": {"callerIp": "203.0.113.10"},
+        "serviceData": {},
+        "request": {
+          "sourceRanges": ["10.0.0.0/8"],
+          "allowed": [{"IPProtocol": "tcp", "ports": ["8080"]}],
+          "labels": {"env": "prod"}
+        }
+      },
+      "timestamp": "2026-10-30T16:22:40Z"
     },
     {
-      "methodName": "v1.compute.firewalls.delete",
-      "principalEmail": "terraform-deployer@example-prod-project.iam.gserviceaccount.com",
-      "callerIp": "203.0.113.10",
-      "timestamp": "2026-10-30T16:23:05Z",
-      "resourceName": "projects/example-prod-project/global/firewalls/prod-deny-all-egress"
+      "protoPayload": {
+        "methodName": "compute.firewalls.patch",
+        "resourceName": "projects/example-prod-project/global/firewalls/prod-allow-tcp-8080",
+        "authenticationInfo": {
+          "principalEmail": "terraform-deployer@example-prod-project.iam.gserviceaccount.com"
+        },
+        "requestMetadata": {"callerIp": "203.0.113.10"},
+        "serviceData": {},
+        "request": {
+          "sourceRanges": ["0.0.0.0/0"],
+          "allowed": [{"IPProtocol": "tcp", "ports": ["8080"]}],
+          "labels": {"env": "prod"}
+        }
+      },
+      "timestamp": "2026-10-30T16:22:41Z"
+    },
+    {
+      "protoPayload": {
+        "methodName": "compute.firewalls.insert",
+        "resourceName": "projects/example-prod-project/global/firewalls/prod-deny-all-egress",
+        "authenticationInfo": {
+          "principalEmail": "terraform-deployer@example-prod-project.iam.gserviceaccount.com"
+        },
+        "requestMetadata": {"callerIp": "203.0.113.10"},
+        "serviceData": {},
+        "request": {
+          "direction": "EGRESS",
+          "denied": [{"IPProtocol": "all"}],
+          "labels": {"env": "prod"}
+        }
+      },
+      "timestamp": "2026-10-30T16:23:04Z"
+    },
+    {
+      "protoPayload": {
+        "methodName": "compute.firewalls.delete",
+        "resourceName": "projects/example-prod-project/global/firewalls/prod-deny-all-egress",
+        "authenticationInfo": {
+          "principalEmail": "terraform-deployer@example-prod-project.iam.gserviceaccount.com"
+        },
+        "requestMetadata": {"callerIp": "203.0.113.10"},
+        "serviceData": {},
+        "request": {}
+      },
+      "timestamp": "2026-10-30T16:23:05Z"
+    },
+    {
+      "protoPayload": {
+        "methodName": "SetIamPolicy",
+        "resourceName": "projects/example-prod-project",
+        "authenticationInfo": {
+          "principalEmail": "terraform-deployer@example-prod-project.iam.gserviceaccount.com"
+        },
+        "requestMetadata": {"callerIp": "203.0.113.10"},
+        "serviceData": {
+          "policyDelta": {
+            "bindingDeltas": [
+              {
+                "action": "ADD",
+                "role": "roles/owner",
+                "member": "serviceAccount:sa-demo@example-prod-project.iam.gserviceaccount.com"
+              }
+            ]
+          }
+        },
+        "request": {}
+      },
+      "timestamp": "2026-10-27T09:15:00Z"
+    },
+    {
+      "protoPayload": {
+        "methodName": "compute.firewalls.insert",
+        "resourceName": "projects/example-prod-project/global/firewalls/prod-allow-tcp-8080-desc",
+        "authenticationInfo": {
+          "principalEmail": "alice@example.com"
+        },
+        "requestMetadata": {"callerIp": "10.0.0.1"},
+        "serviceData": {},
+        "request": {
+          "description": ""
+        }
+      },
+      "timestamp": "2026-10-30T11:02:09Z"
+    },
+    {
+      "protoPayload": {
+        "methodName": "compute.firewalls.patch",
+        "resourceName": "projects/example-prod-project/global/firewalls/prod-allow-tcp-8080-desc",
+        "authenticationInfo": {
+          "principalEmail": "alice@example.com"
+        },
+        "requestMetadata": {"callerIp": "10.0.0.1"},
+        "serviceData": {},
+        "request": {
+          "description": "Updated description only"
+        }
+      },
+      "timestamp": "2026-10-30T11:02:10Z"
+    },
+    {
+      "protoPayload": {
+        "methodName": "compute.firewalls.patch",
+        "resourceName": "projects/example-prod-project/global/firewalls/old-rule",
+        "authenticationInfo": {
+          "principalEmail": "alice@example.com"
+        },
+        "requestMetadata": {"callerIp": "10.0.0.1"},
+        "serviceData": {},
+        "request": {
+          "priority": 1000
+        }
+      },
+      "timestamp": "2026-10-21T08:00:00Z"
     }
   ],
   "resources": [
