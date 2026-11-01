@@ -292,3 +292,26 @@ print(json.dumps(out))
         ]
         result = correlate_by_actor([], entries, subnet_bits=24)
         self.assertEqual(result.get("shared_subnets", {}), {})
+
+
+class TestAnomalousActorPublicOnly(unittest.TestCase):
+    def _logs(self, principal, ips):
+        return [{"principalEmail": principal, "callerIp": ip, "methodName": "v1.compute.firewalls.patch",
+                 "timestamp": "2026-11-01T0%d:00:00Z" % (i % 10), "resourceName": "projects/p/global/firewalls/r"}
+                for i, ip in enumerate(ips)]
+
+    def test_internal_range_spread_not_flagged(self):
+        """A principal spread across many internal 10.1.0.x IPs is NOT an anomalous actor."""
+        from gcp_policy_analyzer.detect import detect_anomalous_actor
+        ips = ["10.1.0.%d" % n for n in range(10, 50)]  # 40 internal IPs, normal corp spread
+        findings = detect_anomalous_actor([], self._logs("alice@acme.example.com", ips))
+        self.assertEqual([f for f in findings if f.technique_id == "T1078.004"], [])
+
+    def test_public_minority_ip_flagged(self):
+        """A principal mostly internal but with a minority PUBLIC IP IS flagged T1078.004."""
+        from gcp_policy_analyzer.detect import detect_anomalous_actor
+        ips = ["10.1.0.%d" % n for n in range(10, 30)] + ["203.0.113.9"]  # 1 public minority
+        findings = detect_anomalous_actor([], self._logs("svc@p.iam.gserviceaccount.com", ips))
+        t = [f for f in findings if f.technique_id == "T1078.004"]
+        self.assertEqual(len(t), 1)
+        self.assertIn("203.0.113.9", t[0].evidence.get("anomalous_ips", []))

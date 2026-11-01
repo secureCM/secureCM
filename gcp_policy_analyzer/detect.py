@@ -11,6 +11,27 @@ from gcp_policy_analyzer.scoring import classify_change, ChangeClass, score_iam_
 _WORLD_RANGES: frozenset[str] = frozenset({"0.0.0.0/0", "::/0"})
 _ADMIN_PORTS: frozenset[str] = frozenset({"22", "3389", "3333", "4444", "14444"})
 
+# ponytail: RFC1918 + loopback/link-local/ULA — "internal". An actor spreading
+# across many internal IPs (normal corp/DHCP) must NOT read as an anomalous actor;
+# only a PUBLIC caller IP is a meaningful T1078.004 signal.
+import ipaddress as _ipaddress
+_INTERNAL_NETS = [
+    _ipaddress.ip_network(c) for c in (
+        "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
+        "127.0.0.0/8", "169.254.0.0/16", "::1/128", "fc00::/7", "fe80::/10",
+    )
+]
+
+
+def _is_public_ip(value: str) -> bool:
+    """True iff value is a parseable IP outside RFC1918/loopback/link-local/ULA."""
+    addr = value.split("/")[0]
+    try:
+        ip = _ipaddress.ip_address(addr)
+    except ValueError:
+        return False
+    return not any(ip in net for net in _INTERNAL_NETS)
+
 
 @dataclass
 class Finding:
@@ -469,8 +490,10 @@ def detect_anomalous_actor(changes: list, logs: list) -> list[Finding]:
         actor = actor_info["actor"]
         if actor not in principals_in_scope:
             continue
-        anomalous_ips = actor_info.get("anomalous_ips", [])
-        anomalous_subnets = actor_info.get("anomalous_subnets", [])
+        # Only PUBLIC anomalous IPs/subnets signal an anomalous actor; internal-range
+        # spread (normal corp/DHCP) is not a T1078.004 signal.
+        anomalous_ips = [ip for ip in actor_info.get("anomalous_ips", []) if _is_public_ip(ip)]
+        anomalous_subnets = [c for c in actor_info.get("anomalous_subnets", []) if _is_public_ip(c)]
         if not anomalous_ips and not anomalous_subnets:
             continue
         findings.append(Finding(
