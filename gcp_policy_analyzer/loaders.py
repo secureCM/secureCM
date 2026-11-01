@@ -64,16 +64,41 @@ def _parse_ts(value: str | datetime) -> datetime:
 # Loaders
 # ---------------------------------------------------------------------------
 
+def _strip_asset_name(name: str) -> str:
+    """Strip '//service/' prefix from an Asset Inventory name → 'projects/X' etc."""
+    # "//cloudresourcemanager.googleapis.com/projects/X" → "projects/X"
+    if name.startswith("//"):
+        slash = name.find("/", 2)          # find the '/' after the service host
+        if slash != -1:
+            return name[slash + 1:]        # everything after "//host"
+    return name
+
+
 def load_iam_policies(data: dict) -> list[IamPolicy]:
-    """Parse IAM policy records from the export envelope into IamPolicy objects."""
+    """Parse IAM policy records from the export envelope into IamPolicy objects.
+
+    Accepts three shapes:
+    (a) normalized  {resource, bindings, labels}
+    (b) bare getIamPolicy  {bindings:[{role,members,condition?}]}  (condition dropped)
+    (c) Asset-Inventory-wrapped  {name:"//…/projects/X", asset_type, iam_policy:{bindings}}
+    """
     out: list[IamPolicy] = []
     for record in data.get("iam_policies", []):
+        # (c) asset-wrapped: has iam_policy sub-key
+        if "iam_policy" in record:
+            raw_bindings = record["iam_policy"].get("bindings", [])
+            resource = _strip_asset_name(record.get("name", ""))
+        else:
+            # (a) normalized or (b) bare getIamPolicy
+            raw_bindings = record.get("bindings", [])
+            resource = record.get("resource", "")
         bindings = [
             IamBinding(role=b["role"], members=b.get("members", []))
-            for b in record.get("bindings", [])
+            for b in raw_bindings
+            # ponytail: condition dropped — no dataclass field for it
         ]
         out.append(IamPolicy(
-            resource=record.get("resource", ""),
+            resource=resource,
             bindings=bindings,
             labels=record.get("labels", {}),
         ))
@@ -81,36 +106,53 @@ def load_iam_policies(data: dict) -> list[IamPolicy]:
 
 
 def load_vpc_firewall_rules(data: dict) -> list[VpcFirewallRule]:
-    """Parse VPC firewall rule records from the export envelope into VpcFirewallRule objects."""
+    """Parse VPC firewall rule records from the export envelope into VpcFirewallRule objects.
+
+    Accepts three shapes:
+    (a) normalized  {name, network, direction, priority, …, log_enabled, labels, raw}
+    (b) bare native  {kind:"compute#firewall", name, network, …, logConfig:{enable}}
+    (c) Asset-Inventory-wrapped  {name, asset_type, resource:{data:{…compute#firewall…}}}
+    """
     out: list[VpcFirewallRule] = []
     for record in data.get("vpc_firewall_rules", []):
-        log_cfg = record.get("logConfig", {})
-        log_enabled = log_cfg.get("enable", record.get("log_enabled", False))
+        # (c) asset-wrapped: firewall data lives under resource.data
+        fw = record.get("resource", {}).get("data", record) if "asset_type" in record else record
+        log_cfg = fw.get("logConfig", {})
+        log_enabled = log_cfg.get("enable", fw.get("log_enabled", False))
         out.append(VpcFirewallRule(
-            name=record.get("name", ""),
-            network=record.get("network", ""),
-            direction=record.get("direction", "INGRESS"),
-            priority=record.get("priority", 1000),
-            source_ranges=record.get("sourceRanges", []),
-            allowed=record.get("allowed", []),
-            denied=record.get("denied", []),
-            disabled=record.get("disabled", False),
+            name=fw.get("name", ""),
+            network=fw.get("network", ""),
+            direction=fw.get("direction", "INGRESS"),
+            priority=fw.get("priority", 1000),
+            source_ranges=fw.get("sourceRanges", []),
+            allowed=fw.get("allowed", []),
+            denied=fw.get("denied", []),
+            disabled=fw.get("disabled", False),
             log_enabled=bool(log_enabled),
-            labels=record.get("labels", {}),
-            raw=record,
+            labels=fw.get("labels", {}),
+            raw=fw,
         ))
     return out
 
 
 def load_network_firewall_policies(data: dict) -> list[NetworkFirewallPolicy]:
-    """Parse network firewall policy records from the export envelope into NetworkFirewallPolicy objects."""
+    """Parse network firewall policy records from the export envelope into NetworkFirewallPolicy objects.
+
+    Accepts three shapes:
+    (a) normalized  {name, region?, rules, raw}
+    (b) bare native  {kind:"compute#firewallPolicy", name, region?, rules:[…]}
+    (c) Asset-Inventory-wrapped  {name, asset_type, resource:{data:{…compute#firewallPolicy…}}}
+    region present → regional; absent → None (global).
+    """
     out: list[NetworkFirewallPolicy] = []
     for record in data.get("network_firewall_policies", []):
+        # (c) asset-wrapped: policy data lives under resource.data
+        pol = record.get("resource", {}).get("data", record) if "asset_type" in record else record
         out.append(NetworkFirewallPolicy(
-            name=record.get("name", ""),
-            region=record.get("region", None),
-            rules=record.get("rules", []),
-            raw=record,
+            name=pol.get("name", ""),
+            region=pol.get("region") or None,   # absent or falsy → None (global)
+            rules=pol.get("rules", []),
+            raw=pol,
         ))
     return out
 

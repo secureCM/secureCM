@@ -4,6 +4,9 @@ import unittest
 from gcp_policy_analyzer.loaders import (
     flatten_log_entry,
     load_log_entries,
+    load_iam_policies,
+    load_vpc_firewall_rules,
+    load_network_firewall_policies,
     FW_CHANGE_METHODS,
     NFP_CHANGE_METHODS,
 )
@@ -125,6 +128,90 @@ class TestLoadLogEntries(unittest.TestCase):
         self.assertEqual(result[0]["methodName"], "compute.firewalls.patch")
         self.assertIn("compute.firewalls.patch", FW_CHANGE_METHODS)
         self.assertNotIn("compute.firewalls.patch", NFP_CHANGE_METHODS)
+
+
+class TestNativeStateLoaders(unittest.TestCase):
+
+    def test_iam_asset_wrapped_resource_from_name(self):
+        """Asset-Inventory-wrapped IAM: resource derived from name by stripping //service/ prefix."""
+        data = {
+            "iam_policies": [
+                {
+                    "name": "//cloudresourcemanager.googleapis.com/folders/77",
+                    "asset_type": "cloudresourcemanager.googleapis.com/Folder",
+                    "iam_policy": {
+                        "bindings": [
+                            {"role": "roles/viewer", "members": ["user:a@example.com"]}
+                        ]
+                    },
+                }
+            ]
+        }
+        result = load_iam_policies(data)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0].resource, "folders/77")
+        self.assertEqual(result[0].bindings[0].role, "roles/viewer")
+
+    def test_firewall_native_compute_kind_parses(self):
+        """Native compute#firewall with logConfig.enable=True → log_enabled True, raw present."""
+        data = {
+            "vpc_firewall_rules": [
+                {
+                    "kind": "compute#firewall",
+                    "name": "allow-http",
+                    "network": "global/networks/default",
+                    "direction": "INGRESS",
+                    "priority": 1000,
+                    "sourceRanges": ["0.0.0.0/0"],
+                    "allowed": [{"IPProtocol": "tcp", "ports": ["80"]}],
+                    "logConfig": {"enable": True},
+                }
+            ]
+        }
+        result = load_vpc_firewall_rules(data)
+        self.assertEqual(len(result), 1)
+        self.assertTrue(result[0].log_enabled)
+        self.assertIsNotNone(result[0].raw)
+
+    def test_nfp_regional_vs_global(self):
+        """NFP with region set → region preserved; without region → None (global)."""
+        data = {
+            "network_firewall_policies": [
+                {"kind": "compute#firewallPolicy", "name": "regional-pol", "region": "us-central1", "rules": []},
+                {"kind": "compute#firewallPolicy", "name": "global-pol", "rules": []},
+            ]
+        }
+        result = load_network_firewall_policies(data)
+        self.assertEqual(len(result), 2)
+        regional = next(r for r in result if r.name == "regional-pol")
+        global_ = next(r for r in result if r.name == "global-pol")
+        self.assertEqual(regional.region, "us-central1")
+        self.assertIsNone(global_.region)
+
+    def test_member_prefixes_preserved(self):
+        """serviceAccount:, user:, group: prefixes are kept verbatim in IamBinding.members."""
+        data = {
+            "iam_policies": [
+                {
+                    "resource": "projects/my-proj",
+                    "bindings": [
+                        {
+                            "role": "roles/editor",
+                            "members": [
+                                "serviceAccount:sa@proj.iam.gserviceaccount.com",
+                                "user:bob@example.com",
+                                "group:eng@example.com",
+                            ],
+                        }
+                    ],
+                }
+            ]
+        }
+        result = load_iam_policies(data)
+        members = result[0].bindings[0].members
+        self.assertIn("serviceAccount:sa@proj.iam.gserviceaccount.com", members)
+        self.assertIn("user:bob@example.com", members)
+        self.assertIn("group:eng@example.com", members)
 
 
 if __name__ == "__main__":
