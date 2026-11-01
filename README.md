@@ -9,12 +9,13 @@ A pure-Python library for security teams that need ranked, redacted answers to G
 ```bash
 git clone <repo-url>
 cd secureCM
-python examples/what_changed_yesterday.py
+python examples/what_changed_yesterday.py          # examples add runtime/ to the path themselves
 python examples/seven_day_exposure.py
-python -m unittest discover -s tests
+PYTHONPATH=runtime python -m unittest discover -s tests
+PYTHONPATH=runtime python -m attack_coverage.report
 ```
 
-No dependencies beyond the Python standard library. No install step needed.
+No dependencies beyond the Python standard library. No install step needed. The runtime code lives in `runtime/` (see *Minimal runtime bundle* below); tests, examples, fixtures, and docs sit at the repo root outside it.
 
 ---
 
@@ -471,7 +472,7 @@ The built-in `codemode/executor.py` is a reference implementation. A production 
 ### MCP quickstart
 
 ```bash
-claude mcp add gcp-analyzer -- python codemode/mcp_server.py
+claude mcp add gcp-analyzer -- env PYTHONPATH=runtime python runtime/codemode/mcp_server.py
 ```
 
 The MCP server exposes two tools:
@@ -483,27 +484,28 @@ The server holds no LLM key and makes no model calls. The external agent (Claude
 
 ### Minimal runtime bundle
 
-The library is standard-library only — no pip install — so putting it inside your sandbox (gVisor, Firecracker microVM, Aegis, nsjail, …) is just copying in the runtime code. Only three packages are needed at runtime:
+All the runtime code lives in one folder — **`runtime/`** — and that folder *is* the bundle. It is the single source of truth (not a generated copy), standard-library only, no pip install. To deploy, copy `runtime/` into your sandbox (gVisor, Firecracker microVM, Aegis, nsjail, …). Nothing else is needed at runtime.
 
-- `gcp_policy_analyzer/` — the helper library the agent imports.
-- `attack_coverage/` — `catalog.py`, `signatures.py`, and `attack_catalog.json` (the ATT&CK registry behind `run_detectors`). `report.py` is the CI/coverage gate and is **not** a runtime dependency.
-- `codemode/` — the MCP server and executor.
-
-Not needed at runtime: `docs/`, `tests/`, `examples/`, `fixtures/`. Nothing in the three runtime packages imports `examples/` or `fixtures/`; in production the data arrives from the broker/export, and `fixtures/` is consumed only by the test suite and `attack_coverage/report.py`.
-
-Assemble the bundle (≈18 files, ≈140 KB):
-
-```bash
-scripts/make-sandbox-bundle.sh ./sandbox-bundle
+```
+runtime/
+  gcp_policy_analyzer/   # helper library the agent imports
+  attack_coverage/       # ATT&CK catalog + registry behind run_detectors
+  codemode/              # MCP server + executor
 ```
 
-Then, inside your sandbox:
+Left at the repo root, outside `runtime/` and **not** needed to run: `docs/`, `tests/`, `examples/`, `fixtures/`. Nothing in `runtime/` imports `examples/` or `fixtures/`; in production the data arrives from the broker/export. (`fixtures/` is used only by the test suite and `attack_coverage/report.py`, the CI/coverage gate — which is inside `runtime/attack_coverage/` but never invoked at analysis time.)
+
+**Starting the process** — put `runtime/` wherever your sandbox mounts it, add that path to `PYTHONPATH`, and run the MCP server (stdio JSON-RPC):
 
 ```bash
-PYTHONPATH=/path/to/bundle python codemode/mcp_server.py
+# from the repo during development:
+PYTHONPATH=runtime python runtime/codemode/mcp_server.py
+
+# inside a sandbox where the folder is mounted at /app/runtime:
+PYTHONPATH=/app/runtime python /app/runtime/codemode/mcp_server.py
 ```
 
-The bundle holds no credentials; deny-by-default egress and real isolation remain the sandbox's responsibility (see *Calling runtime responsibilities* above).
+The folder holds no credentials; deny-by-default egress and real isolation remain the sandbox's responsibility (see *Calling runtime responsibilities* above). The MCP client then calls `describe_capabilities` and `run_script` over stdio as described in the quickstart.
 
 ### Redaction posture
 
@@ -540,7 +542,7 @@ Custom redactors run after the built-ins inside every `redact_sensitive` call, i
 The `attack_coverage` package ships a catalog of GCP-relevant MITRE ATT&CK techniques and a coverage report that maps each technique to the detectors that fire on it.
 
 ```bash
-python -m attack_coverage.report
+PYTHONPATH=runtime python -m attack_coverage.report
 ```
 
 Prints a text matrix showing per-tactic coverage. To get the report programmatically:

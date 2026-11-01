@@ -8,8 +8,8 @@ import pathlib
 import sys
 from datetime import datetime, timedelta, timezone
 
-# Allow running from repo root without installing the package
-sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
+# Allow running from repo root without installing the package (code lives in runtime/)
+sys.path.insert(0, str(pathlib.Path(__file__).parent.parent / "runtime"))
 
 from gcp_policy_analyzer import analyze
 

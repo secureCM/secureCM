@@ -8,7 +8,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 INCIDENTS = REPO / "fixtures" / "incidents"
-CATALOG_PATH = REPO / "attack_coverage" / "attack_catalog.json"
+CATALOG_PATH = REPO / "runtime" / "attack_coverage" / "attack_catalog.json"
 GENERATE = INCIDENTS / "generate.py"
 
 VALID_RESOURCE_TYPES = {"iam_policy", "firewall_rule", "network_firewall_policy"}

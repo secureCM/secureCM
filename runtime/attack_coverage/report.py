@@ -16,7 +16,8 @@ from pathlib import Path
 from attack_coverage.catalog import load_catalog
 from attack_coverage.signatures import TECHNIQUE_DETECTOR, run_detectors
 
-_REPO_ROOT = Path(__file__).parent.parent
+# repo root = three up from runtime/attack_coverage/report.py (fixtures/ lives there, outside runtime/)
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _fixture_exists(path: str) -> bool:

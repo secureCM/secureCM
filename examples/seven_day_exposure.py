@@ -17,7 +17,7 @@ import sys
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 
-sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
+sys.path.insert(0, str(pathlib.Path(__file__).parent.parent / "runtime"))
 
 from gcp_policy_analyzer import (
     load_iam_policies,
