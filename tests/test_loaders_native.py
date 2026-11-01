@@ -1,7 +1,12 @@
 """Tests for flatten_log_entry and load_log_entries (native GCP Cloud Audit LogEntry)."""
 import unittest
 
-from gcp_policy_analyzer.loaders import flatten_log_entry, load_log_entries
+from gcp_policy_analyzer.loaders import (
+    flatten_log_entry,
+    load_log_entries,
+    FW_CHANGE_METHODS,
+    NFP_CHANGE_METHODS,
+)
 
 
 class TestFlattenLogEntry(unittest.TestCase):
@@ -81,6 +86,45 @@ class TestLoadLogEntries(unittest.TestCase):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]["methodName"], "SetIamPolicy")
         self.assertEqual(result[0]["callerIp"], "1.2.3.4")
+
+    def test_nfp_and_fw_methods_are_distinct(self):
+        """NFP_CHANGE_METHODS contains only networkFirewallPolicies; FW_CHANGE_METHODS contains only firewalls."""
+        # networkFirewallPolicies methods in NFP but not in FW
+        nfp_only = {"compute.networkFirewallPolicies.addRule", "compute.networkFirewallPolicies.patchRule"}
+        for method in nfp_only:
+            self.assertIn(method, NFP_CHANGE_METHODS)
+            self.assertNotIn(method, FW_CHANGE_METHODS)
+        # VPC firewall methods in FW but not in NFP
+        fw_only = {"compute.firewalls.insert", "compute.firewalls.patch"}
+        for method in fw_only:
+            self.assertIn(method, FW_CHANGE_METHODS)
+            self.assertNotIn(method, NFP_CHANGE_METHODS)
+
+    def test_networkfirewall_policies_addrule_kept_by_load_log_entries(self):
+        """A networkFirewallPolicies.addRule entry is kept and in NFP_CHANGE_METHODS, not in FW_CHANGE_METHODS."""
+        data = {
+            "log_entries": [
+                self._make_native("compute.networkFirewallPolicies.addRule"),
+            ]
+        }
+        result = load_log_entries(data)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["methodName"], "compute.networkFirewallPolicies.addRule")
+        self.assertIn("compute.networkFirewallPolicies.addRule", NFP_CHANGE_METHODS)
+        self.assertNotIn("compute.networkFirewallPolicies.addRule", FW_CHANGE_METHODS)
+
+    def test_firewalls_patch_in_fw_not_nfp(self):
+        """A compute.firewalls.patch entry is kept and in FW_CHANGE_METHODS, but not in NFP_CHANGE_METHODS."""
+        data = {
+            "log_entries": [
+                self._make_native("compute.firewalls.patch"),
+            ]
+        }
+        result = load_log_entries(data)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["methodName"], "compute.firewalls.patch")
+        self.assertIn("compute.firewalls.patch", FW_CHANGE_METHODS)
+        self.assertNotIn("compute.firewalls.patch", NFP_CHANGE_METHODS)
 
 
 if __name__ == "__main__":

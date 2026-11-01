@@ -129,7 +129,10 @@ FW_CHANGE_METHODS: frozenset[str] = frozenset({
     "compute.firewalls.insert",
     "compute.firewalls.patch",
     "compute.firewalls.delete",
-    # Network Firewall Policy  (networkFirewallPolicies.<verb>)
+})
+
+NFP_CHANGE_METHODS: frozenset[str] = frozenset({
+    # Network Firewall Policy  (compute.networkFirewallPolicies.<verb>)
     "compute.networkFirewallPolicies.insert",
     "compute.networkFirewallPolicies.patch",
     "compute.networkFirewallPolicies.delete",
@@ -137,8 +140,6 @@ FW_CHANGE_METHODS: frozenset[str] = frozenset({
     "compute.networkFirewallPolicies.patchRule",
     "compute.networkFirewallPolicies.removeRule",
 })
-
-NFP_CHANGE_METHODS: frozenset[str] = FW_CHANGE_METHODS  # same surface for now
 
 ENABLER_METHODS: frozenset[str] = frozenset({
     "google.iam.admin.v1.CreateServiceAccountKey",
