@@ -222,6 +222,93 @@ def _iam_changes_from_logs(flat_entries: list[dict]) -> list[Change]:
     return out
 
 
+def _config_changes_from_logs(flat_entries: list[dict]) -> list[Change]:
+    """Derive firewall and NFP Change records by replaying the audit-log stream per resource."""
+    # Bucket by resourceName, filter to FW/NFP methods only
+    by_resource: dict[str, list[dict]] = {}
+    for entry in flat_entries:
+        method = entry.get("methodName", "")
+        if method not in FW_CHANGE_METHODS and method not in NFP_CHANGE_METHODS:
+            continue
+        resource = entry.get("resourceName", "")
+        by_resource.setdefault(resource, []).append(entry)
+
+    out: list[Change] = []
+    for resource, events in by_resource.items():
+        # Sort ascending by timestamp
+        events.sort(key=lambda e: e.get("timestamp", ""))
+
+        # resource_type from resourceName path
+        if "/firewalls/" in resource:
+            resource_type = "firewall_rule"
+        elif "/firewallPolicies/" in resource:
+            resource_type = "network_firewall_policy"
+        else:
+            resource_type = "firewall_rule"  # ponytail: fallback; unknown paths treated as VPC
+
+        running: dict | None = None  # reconstructed state; None until first insert
+
+        for entry in events:
+            method = entry.get("methodName", "")
+            request = dict(entry.get("request") or {})
+            ts_raw = entry.get("timestamp", "")
+            ts = _parse_ts(ts_raw) if ts_raw else datetime.now(timezone.utc)
+            principal = entry.get("principalEmail", "")
+
+            verb = method.rsplit(".", 1)[-1]  # insert / patch / delete / addRule / patchRule / removeRule
+
+            if verb == "insert":
+                before_state = running  # normally None for first insert
+                running = dict(request)
+                out.append(Change(
+                    resource=resource,
+                    resource_type=resource_type,
+                    action="CREATE",
+                    before=before_state if before_state is not None else {},
+                    after=dict(running),
+                    timestamp=ts,
+                    principal=principal,
+                ))
+
+            elif verb == "delete":
+                labels: dict = {}
+                before_state = running
+                if running is None:
+                    labels = {"baseline": "predates_window"}
+                out.append(Change(
+                    resource=resource,
+                    resource_type=resource_type,
+                    action="DELETE",
+                    before=before_state,
+                    after=None,
+                    timestamp=ts,
+                    principal=principal,
+                    labels=labels,
+                ))
+                running = None
+
+            else:
+                # patch / addRule / patchRule / removeRule → UPDATE with merge
+                labels = {}
+                before_state = dict(running) if running is not None else None
+                if running is None:
+                    labels = {"baseline": "predates_window"}
+                    running = {}
+                running = {**running, **request}  # partial merge
+                out.append(Change(
+                    resource=resource,
+                    resource_type=resource_type,
+                    action="UPDATE",
+                    before=before_state,
+                    after=dict(running),
+                    timestamp=ts,
+                    principal=principal,
+                    labels=labels,
+                ))
+
+    return out
+
+
 def load_audit_changes(
     data: dict,
     resource_types: list[str] | None = None,
@@ -264,7 +351,7 @@ def load_audit_changes(
 
     # Native log_entries path
     flat = load_log_entries(data)
-    derived = _iam_changes_from_logs(flat)
+    derived = _iam_changes_from_logs(flat) + _config_changes_from_logs(flat)
     # Apply resource_type and time filters
     out: list[Change] = []
     for c in derived:
