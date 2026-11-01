@@ -22,7 +22,9 @@ No dependencies beyond the Python standard library. No install step needed.
 
 All symbols below are re-exported from `gcp_policy_analyzer` and listed in `__all__`.
 
-### Fetch
+### Fetch (pass-through broker client)
+
+The broker is a credentialed **pass-through**: it holds the read-only GCP credential, fetches the requested window, and returns native JSON verbatim. It performs **no normalization**. The loaders (below) are the normalizer.
 
 ```
 fetch_export(base_url, resource_type, scope, *, start=None, end=None, timeout=30) -> dict
@@ -32,7 +34,7 @@ GET `{base_url}/export?type=…&scope=…[&start=…&end=…]`, follows paginati
 ```
 fetch_all(base_url, scope, *, timeout=30) -> dict
 ```
-Calls `fetch_export` for all five resource types and merges results into one envelope.
+Calls `fetch_export` for all four resource types (`iam_policies`, `vpc_firewall_rules`, `network_firewall_policies`, `log_entries`) and merges results into one envelope.
 
 ```
 BrokerError
@@ -47,7 +49,7 @@ load_vpc_firewall_rules(data: dict) -> list[VpcFirewallRule]
 load_network_firewall_policies(data: dict) -> list[NetworkFirewallPolicy]
 load_audit_changes(data, resource_types=None, start=None, end=None) -> list[Change]
 ```
-Each loader reads its key from the envelope dict and returns typed dataclasses. `load_audit_changes` accepts optional `resource_types` filter and a UTC-aware `start`/`end` window.
+Each loader reads its key from the envelope dict and returns typed dataclasses. `load_audit_changes` derives `Change` records from native `log_entries` (logs-primary derivation — see below); the old `audit_changes` pre-extracted key is no longer supported.
 
 ### Diff (two-snapshot comparison)
 
@@ -154,13 +156,13 @@ Load → prioritize → format → redact in one call. Returns `{"summary": str,
 python examples/what_changed_yesterday.py
 ```
 
-Calls `analyze()` on the synthetic fixture for the 24-hour window ending 2026-10-31.
+Calls `analyze()` on the synthetic fixture for the 24-hour window ending 2026-10-31. Changes are derived via logs-primary: the 6 log entries in the window produce 6 `Change` records (CREATE+UPDATE for `prod-allow-tcp-8080`, CREATE+DELETE for `prod-deny-all-egress`, IAM `SetIamPolicy` is outside the 24h window, plus two description-only changes by alice). Two of those are risky.
 
 Expected output shape:
 
 ```json
 {
-  "summary": "2 risky change(s) out of 3 total in window 2026-10-30 to 2026-10-31.",
+  "summary": "2 risky change(s) out of 6 total in window 2026-10-30 to 2026-10-31.",
   "prioritized": [
     {
       "rank": 1,
@@ -194,12 +196,12 @@ Expected output shape:
     }
   ],
   "stats": {
-    "total_changes": 3,
+    "total_changes": 6,
     "risky": 2,
-    "neutral": 1,
+    "neutral": 4,
     "principals": [
-      "alice@example.com",
-      "sa-8ac9c3@example-prod-project.iam.gserviceaccount.com"
+      "sa-8ac9c3@example-prod-project.iam.gserviceaccount.com",
+      "alice@example.com"
     ]
   }
 }
@@ -255,10 +257,11 @@ Multi-step pipeline over a 7-day window. Expected output shape:
 `seven_day_exposure.py` is the canonical composition pattern:
 
 ```python
-# 1. fetch or load
+# 1. fetch or load  (broker returns native GCP JSON verbatim — no normalization)
 with open("fixtures/synthetic.json") as f:
     data = json.load(f)
 # or: data = fetch_all(broker_url, "projects/my-project")
+# fetch_all fetches log_entries, iam_policies, vpc_firewall_rules, network_firewall_policies
 
 # 2. load changes in window
 changes = load_audit_changes(data, start=start, end=end)
@@ -294,44 +297,66 @@ The model writes the script; `run_script` executes it; `redact_sensitive` is the
 
 ---
 
-## Record schemas (authoritative broker contract)
+## Input model: native Google-published GCP
 
-This section is the authoritative contract that the external broker implements. The broker returns a JSON object with one or more of these top-level keys. All five types may appear in a single response or in separate `fetch_export` calls.
+All input is **native Google-published GCP JSON** — no custom normalized envelope. The broker returns what the GCP APIs return; the loaders normalise it internally.
+
+### Scope: three managed surfaces
+
+| Surface | Key in envelope | Google schema |
+|---------|----------------|---------------|
+| IAM allow policies (project / folder / org) | `iam_policies` | Cloud Asset Inventory `getIamPolicy` / IAM policy resource |
+| VPC firewall rules | `vpc_firewall_rules` | `compute#firewall` ([Compute Firewall](https://cloud.google.com/compute/docs/reference/rest/v1/firewalls)) |
+| Network firewall policies (global + regional) | `network_firewall_policies` | `compute#firewallPolicy` ([Network Firewall Policies](https://cloud.google.com/compute/docs/reference/rest/v1/networkFirewallPolicies)) |
+
+SA-key and group-membership events are ingested as **correlation context only** (enabler events: key-mint / group-add that precede an in-scope change, surfaced via `enrich_with_enablers`). They are never managed surfaces.
+
+### Envelope keys
 
 ```json
 {
   "iam_policies":              [...],
   "vpc_firewall_rules":        [...],
   "network_firewall_policies": [...],
-  "audit_changes":             [...],
   "log_entries":               [...]
 }
 ```
 
+`log_entries` is required for change derivation. Current-state keys (`iam_policies`, `vpc_firewall_rules`, `network_firewall_policies`) are optional — used for static exposure scoring and blast-radius context only.
+
 ### `iam_policies`
+
+Native Cloud Asset Inventory asset-wrapped shape:
 
 ```json
 {
-  "resource": "projects/example-prod-project",
-  "labels":   {"env": "prod"},
-  "bindings": [
-    {
-      "role":    "roles/editor",
-      "members": ["serviceAccount:terraform-deployer@example-prod-project.iam.gserviceaccount.com"]
-    }
-  ]
+  "name":       "//cloudresourcemanager.googleapis.com/projects/example-prod-project",
+  "asset_type": "cloudresourcemanager.googleapis.com/Project",
+  "iam_policy": {
+    "bindings": [
+      {
+        "role":    "roles/editor",
+        "members": ["serviceAccount:terraform-deployer@example-prod-project.iam.gserviceaccount.com"]
+      }
+    ]
+  }
 }
 ```
 
-- `resource`: GCP resource name (project, folder, or organization)
-- `labels`: key-value labels on the resource (used by `is_production`)
-- `bindings[].role`: GCP IAM role string
-- `bindings[].members`: list of member strings with prefix (`serviceAccount:`, `user:`, `group:`)
+The loader also accepts a bare `getIamPolicy` response `{bindings:[…]}` and the legacy normalized shape `{resource, bindings, labels}`.
+
+- `name`: `//service/…` Asset Inventory name; the loader strips the `//service/` prefix to a `projects/X` resource path.
+- `iam_policy.bindings[].role`: GCP IAM role string
+- `iam_policy.bindings[].members`: list of member strings with prefix (`serviceAccount:`, `user:`, `group:`)
+- `labels`: key-value labels on the resource (used by `is_production`); may also appear at top level in the bare shape.
 
 ### `vpc_firewall_rules`
 
+Native `compute#firewall` shape:
+
 ```json
 {
+  "kind":         "compute#firewall",
   "name":         "prod-allow-tcp-8080",
   "network":      "projects/example-prod-project/global/networks/prod-network",
   "direction":    "INGRESS",
@@ -345,14 +370,16 @@ This section is the authoritative contract that the external broker implements. 
 }
 ```
 
-Follows the `compute#firewall` shape. `sourceRanges` is an empty list for EGRESS rules. `allowed` and `denied` are mutually exclusive. `logConfig.enable` is the preferred field; the loader also accepts `log_enabled` as a fallback.
+`sourceRanges` is an empty list for EGRESS rules. `allowed` and `denied` are mutually exclusive. `logConfig.enable` is the preferred field; the loader also accepts `log_enabled` as a fallback. The loader also accepts Cloud Asset Inventory asset-wrapped shape.
 
 ### `network_firewall_policies`
 
+Native `compute#firewallPolicy` shape:
+
 ```json
 {
+  "kind":   "compute#firewallPolicy",
   "name":   "prod-network-policy",
-  "region": null,
   "rules": [
     {
       "priority":  1000,
@@ -364,70 +391,58 @@ Follows the `compute#firewall` shape. `sourceRanges` is an empty list for EGRESS
 }
 ```
 
-`region` is `null` for global policies, a region string otherwise. Follows the `compute#firewallPolicy` shape.
+`region` present → regional policy; absent → global (`None` in the dataclass). Follows the `compute#firewallPolicy` shape for both global and regional policies.
 
-### `audit_changes`
+### `log_entries` — Cloud Audit LogEntry (native)
 
-Pre-extracted change records derived from Cloud Audit Log entries:
-
-```json
-{
-  "resource":      "projects/example-prod-project/global/firewalls/prod-allow-tcp-8080",
-  "resource_type": "firewall_rule",
-  "action":        "UPDATE",
-  "principal":     "terraform-deployer@example-prod-project.iam.gserviceaccount.com",
-  "timestamp":     "2026-10-30T16:22:41Z",
-  "before":        {"sourceRanges": ["10.0.0.0/8"]},
-  "after":         {"sourceRanges": ["0.0.0.0/0"]},
-  "labels":        {"env": "prod"}
-}
-```
-
-- `resource_type`: one of `firewall_rule`, `iam_policy`, `network_firewall_policy`
-- `action`: `CREATE`, `UPDATE`, or `DELETE`
-- `principal`: the identity that made the change (bare email, no `serviceAccount:` prefix)
-- `timestamp`: ISO-8601 with Z suffix (UTC)
-- `before`/`after`: partial snapshots showing what changed; `after` is `null` for DELETE
-- `labels`: labels on the affected resource at the time of change
-
-Optional time-window filter: the broker accepts `&start={iso8601}&end={iso8601}` query parameters for `audit_changes` and `log_entries`. The library also filters client-side via `load_audit_changes(data, start=…, end=…)`.
-
-### `log_entries`
-
-Raw Cloud Audit Log entries (underlying evidence for `audit_changes`):
+Native Cloud Audit Log `LogEntry` shape with `protoPayload` of type `AuditLog`:
 
 ```json
 {
-  "methodName":    "v1.compute.firewalls.patch",
-  "principalEmail": "terraform-deployer@example-prod-project.iam.gserviceaccount.com",
-  "callerIp":      "203.0.113.10",
-  "timestamp":     "2026-10-30T16:22:41Z",
-  "resourceName":  "projects/example-prod-project/global/firewalls/prod-allow-tcp-8080"
+  "timestamp": "2026-10-30T16:22:41Z",
+  "protoPayload": {
+    "methodName":  "compute.firewalls.patch",
+    "resourceName": "projects/example-prod-project/global/firewalls/prod-allow-tcp-8080",
+    "authenticationInfo": {"principalEmail": "terraform-deployer@example-prod-project.iam.gserviceaccount.com"},
+    "requestMetadata": {"callerIp": "203.0.113.10"},
+    "serviceData": {},
+    "request": {"sourceRanges": ["0.0.0.0/0"]}
+  }
 }
 ```
 
-Used by `filter_log_entries` and `correlate_changes_with_logs`. `principalEmail` carries the bare email (no prefix).
+Used by `load_log_entries` (flattens to a dict), `filter_log_entries`, and `correlate_changes_with_logs`. Flat dicts (already-extracted `methodName`, `principalEmail`, etc. at top level) are also accepted by `load_log_entries`.
+
+### Change derivation: logs-primary
+
+`load_audit_changes` derives `Change` records directly from `log_entries` — no pre-extracted `audit_changes` key:
+
+- **IAM changes**: from `SetIamPolicy` entries via `serviceData.policyDelta.bindingDeltas`. Each ADD/REMOVE delta produces `before`/`after` bindings on the `Change`.
+- **Firewall / network-policy changes**: by in-window replay of the resource's own audit history (sorted by timestamp). Each `insert` / `patch` / `delete` (and NFP `addRule` / `patchRule` / `removeRule`) advances the reconstructed state and emits a `Change`.
+
+**Baseline-gap behaviour**: when a resource's prior state predates the fetched window, `running` starts as `None`. The emitted `Change` has `before=None` and carries `labels={"baseline": "predates_window"}`. Detectors that require a known `before` state abstain on these changes. To recover the baseline, widen the fetch window to include the resource's creation event.
+
+**Enabler events** (`CreateServiceAccountKey`, `google.admin.directory.member.insert`, etc.) are loaded by `load_log_entries` but are not converted to `Change` records. They are correlation context only — surfaced by `enrich_with_enablers` to annotate in-scope changes.
 
 ### Broker HTTP contract
 
 ```
 GET {base_url}/export?type={resource_type}&scope={scope}
 
-  type  ∈ iam_policies | vpc_firewall_rules | network_firewall_policies
-          | audit_changes | log_entries
+  type  ∈ iam_policies | vpc_firewall_rules | network_firewall_policies | log_entries
   scope = projects/X | folders/N | organizations/N
-  optional (audit_changes and log_entries only):
+  optional (log_entries only):
           &start={iso8601}&end={iso8601}
 
-→ 200  application/json  the normalized envelope (may contain only the requested key)
+→ 200  application/json  native GCP JSON (verbatim, not normalized)
 → 4xx/5xx  any non-200 raises BrokerError in the library
 ```
 
+The broker holds the read-only GCP credential. It fetches and returns native GCP JSON verbatim — **no normalization**. The sandbox sends no auth headers.
+
 Pagination: if the response contains `"nextPageToken": "…"`, the library issues a follow-up request with `&pageToken={token}` appended. The broker must set `nextPageToken` in every intermediate page and omit it (or set it to `null`/`""`) on the final page.
 
-Ceilings enforced by the library (not the broker): `MAX_PAGES = 1000`, `MAX_RESPONSE_BYTES = 50 MB` per page. Exceeding either raises `BrokerError`.
-
-No authentication headers are sent. The broker holds credentials; the sandbox sends nothing secret.
+Ceilings enforced by the library: `MAX_PAGES = 1000`, `MAX_RESPONSE_BYTES = 50 MB` per page. Exceeding either raises `BrokerError`.
 
 ---
 
@@ -516,9 +531,9 @@ The underlying technique catalog is in `attack_coverage/attack_catalog.json`.
 
 Coverage is limited to three control-plane surfaces that this library can observe:
 
-- **IAM bindings** (`iam_policies`)
-- **VPC firewall rules** (`vpc_firewall_rules`, `network_firewall_policies`)
-- **Admin Activity audit logs** (`audit_changes`, `log_entries`)
+- **IAM bindings** (`iam_policies` current state; `SetIamPolicy` entries in `log_entries`)
+- **VPC firewall rules** (`vpc_firewall_rules` current state; `compute.firewalls.*` entries in `log_entries`)
+- **Network firewall policies** (`network_firewall_policies` current state; `compute.networkFirewallPolicies.*` entries in `log_entries`)
 
 ### Why most of the ATT&CK matrix is out-of-scope
 
@@ -542,7 +557,7 @@ The library sees only GCP control-plane telemetry. Techniques that require endpo
 
 ```python
 from attack_coverage.signatures import run_detectors
-findings = run_detectors(envelope)   # envelope is the raw export dict
+findings = run_detectors(envelope)   # envelope is the native GCP export dict (log_entries + optional current-state keys)
 for f in findings:
     print(f.technique_id, f.technique_name, f.severity, f.resource)
 ```
