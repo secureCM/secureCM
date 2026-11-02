@@ -1,21 +1,68 @@
-# GCP Policy Analyzer
+# secureCM — GCP Security Analysis for Code Mode
 
-A pure-Python library for security teams that need ranked, redacted answers to GCP IAM and firewall questions — including multi-step ones like "every change in the last 7 days that increased external exposure on production networks, joined to service accounts that already hold high-privilege roles."
+**The invariant:** an LLM agent writes one Python script, raw IAM policies and firewall logs stay inside a sandbox, only a redacted ranked finding returns to the model. Sensitive GCP data never enters the context window.
+
+Two MCP tools. Model calls `describe_capabilities` to learn the API, then calls `run_script` to run a script against your data. That is the entire surface.
+
+```
+LLM  ──describe_capabilities──►  MCP server (runtime/)
+     ◄── API reference ──────────
+     ──run_script(code) ─────────►  executor  ──►  helpers  ──►  redact
+     ◄── redacted findings ──────────────────────────────────────
+```
+
+Pure Python, no dependencies, no install. Drop `runtime/` into any sandbox (gVisor, Firecracker, nsjail).
+
+> **Sandbox requirement:** `runtime/` is not a sandbox. It is the code that runs inside one. Real isolation, deny-by-default egress, and credential exclusion are the operator's responsibility. See [Secure execution](#secure-execution).
 
 ---
 
-## Quick start (under 5 minutes)
+## Quick start
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/secureCM/secureCM
 cd secureCM
-python dev/examples/what_changed_yesterday.py      # examples add runtime/ to the path themselves
-python dev/examples/seven_day_exposure.py
-PYTHONPATH=runtime python -m unittest discover -s dev/tests
-PYTHONPATH=runtime python dev/report.py
+python dev/examples/what_changed_yesterday.py
 ```
 
-No dependencies beyond the Python standard library. No install step needed. The runtime code lives in `runtime/` (see *Minimal runtime bundle* below); tests, examples, fixtures, and docs sit at the repo root outside it.
+Expected output — no setup required, path is wired in the script:
+
+```json
+{
+  "summary": "2 risky change(s) out of 6 total in window 2026-10-30 to 2026-10-31.",
+  "prioritized": [
+    {
+      "rank": 1,
+      "resource": ".../firewalls/prod-allow-tcp-8080",
+      "action": "UPDATE",
+      "principal": "sa-8ac9c3@example-prod-project.iam.gserviceaccount.com",
+      "change_class": "BroadenedAccess",
+      "blast_radius": { "affected_resources": 14, "external_exposure": true, "production": true, "score": 56 }
+    }
+  ]
+}
+```
+
+```bash
+python dev/examples/seven_day_exposure.py          # high-priv SA exposure over 7 days
+PYTHONPATH=runtime python -m unittest discover -s dev/tests   # 195 tests
+PYTHONPATH=runtime python dev/report.py            # ATT&CK coverage gate
+```
+
+---
+
+## Does it help models find things they would otherwise miss?
+
+Tested with two model tiers, 5 trials each, on a neutralized 10-project haystack (5 real-world attack patterns, markers scrubbed so models cannot string-match — only behavior-based detection scores).
+
+| Model | Without helpers | With helpers | Δ |
+|-------|----------------|--------------|---|
+| Claude Haiku (reasoning: low) | 2 / 5 campaigns found (40%) | 3.2 / 5 (64%) | +24 pp |
+| Claude Sonnet (reasoning: low) | 5 / 5 (100%) | 5 / 5 (100%) | stable |
+
+Haiku gains +24 percentage points. Sonnet stays at 100% — the helpers do not add noise and the model does not hallucinate findings it cannot derive from the data. The campaigns cover IAM privilege escalation, firewall exposure, SA key enablement, and cross-project lateral movement. A model without helpers can still dismiss findings it cannot support; the helpers raise how many it can find and support in the first place.
+
+---
 
 ---
 
