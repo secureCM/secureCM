@@ -485,6 +485,24 @@ def detect_anomalous_actor(changes: list, logs: list) -> list[Finding]:
                 return r
         return ""
 
+    def _earliest_ts(actor: str) -> datetime | None:
+        candidates: list[datetime] = []
+        for ch in changes_by_principal.get(actor, []):
+            ts = ch.timestamp if hasattr(ch, "timestamp") else ch.get("timestamp")
+            if isinstance(ts, datetime):
+                candidates.append(ts)
+        for entry in logs_by_principal.get(actor, []):
+            raw = entry.get("timestamp", "")
+            if isinstance(raw, datetime):
+                candidates.append(raw)
+            elif raw:
+                try:
+                    from datetime import timezone
+                    candidates.append(datetime.fromisoformat(raw.replace("Z", "+00:00")))
+                except ValueError:
+                    pass
+        return min(candidates) if candidates else None
+
     findings: list[Finding] = []
     for actor_info in result["actors"]:
         actor = actor_info["actor"]
@@ -503,7 +521,7 @@ def detect_anomalous_actor(changes: list, logs: list) -> list[Finding]:
             severity="high",
             resource=_first_resource(actor),
             principal=actor,
-            timestamp=None,
+            timestamp=_earliest_ts(actor),
             evidence={
                 "anomalous_ips": anomalous_ips,
                 "anomalous_subnets": anomalous_subnets,

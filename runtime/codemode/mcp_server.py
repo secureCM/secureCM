@@ -31,14 +31,18 @@ FINDING MULTI-STEP INCIDENTS (needle in a haystack):
   signal is usually a shared caller IP. correlate_by_actor(changes, log_entries)
   groups activity per principal and returns shared_ips (IPs used by >1 actor) and
   per-actor anomalous_ips — an external identity and a service account sharing one IP
-  are almost certainly one actor. Inspect log_entries' callerIp with .get("callerIp")
-  — present for most entries, absent for some (internal/scheduler calls).
+  are almost certainly one actor.
+
+  IMPORTANT: pass load_log_entries(data) as the second argument, NOT data["log_entries"].
+  load_log_entries flattens the native protoPayload shape so callerIp is accessible at
+  the top level. Raw log_entries have callerIp buried at protoPayload.requestMetadata
+  and correlate_by_actor will see no IPs — shared_ips will be empty.
 
 WORKED EXAMPLE (complex question, end to end):
   import json
   from datetime import datetime, timedelta, timezone
   from gcp_policy_analyzer import (
-      load_audit_changes, load_iam_policies, classify_change, ChangeClass,
+      load_audit_changes, load_log_entries, load_iam_policies, classify_change, ChangeClass,
       score_iam_binding, is_service_account, compute_blast_radius,
       prioritize_changes, correlate_by_actor, redact_sensitive,
   )
@@ -57,7 +61,8 @@ WORKED EXAMPLE (complex question, end to end):
               ...   # members are masked SA ids or raw human/external emails
 
   # 3. tie it together — shared caller IP across actors is the smoking gun
-  corr = correlate_by_actor(changes, data.get("log_entries", []))
+  #    load_log_entries flattens protoPayload so callerIp is top-level
+  corr = correlate_by_actor(changes, load_log_entries(data))
   print(json.dumps(redact_sensitive({
       "shared_ips": corr["shared_ips"],
       "top_actors": corr["actors"][:5],
