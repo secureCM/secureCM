@@ -17,7 +17,7 @@ import sys
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 
-sys.path.insert(0, str(pathlib.Path(__file__).parent.parent / "runtime"))
+sys.path.insert(0, str(pathlib.Path(__file__).parent.parent.parent / "runtime"))
 
 from gcp_policy_analyzer import (
     load_iam_policies,
@@ -31,7 +31,7 @@ from gcp_policy_analyzer import (
     classify_change,
 )
 
-FIXTURE = pathlib.Path(__file__).parent.parent / "fixtures" / "synthetic.json"
+FIXTURE = pathlib.Path(__file__).parent.parent.parent / "dev" / "fixtures" / "synthetic.json"
 ANCHOR = datetime(2026, 10, 31, tzinfo=timezone.utc)
 
 with open(FIXTURE) as f:

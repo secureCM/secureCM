@@ -9,11 +9,11 @@ import sys
 from datetime import datetime, timedelta, timezone
 
 # Allow running from repo root without installing the package (code lives in runtime/)
-sys.path.insert(0, str(pathlib.Path(__file__).parent.parent / "runtime"))
+sys.path.insert(0, str(pathlib.Path(__file__).parent.parent.parent / "runtime"))
 
 from gcp_policy_analyzer import analyze
 
-FIXTURE = pathlib.Path(__file__).parent.parent / "fixtures" / "synthetic.json"
+FIXTURE = pathlib.Path(__file__).parent.parent.parent / "dev" / "fixtures" / "synthetic.json"
 # ponytail: use fixture anchor; never datetime.now() — fixtures are static
 ANCHOR = datetime(2026, 10, 31, tzinfo=timezone.utc)
 

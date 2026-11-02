@@ -6,8 +6,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parent.parent
-INCIDENTS = REPO / "fixtures" / "incidents"
+REPO = Path(__file__).resolve().parent.parent.parent
+INCIDENTS = REPO / "dev" / "fixtures" / "incidents"
 CATALOG_PATH = REPO / "runtime" / "attack_coverage" / "attack_catalog.json"
 GENERATE = INCIDENTS / "generate.py"
 

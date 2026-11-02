@@ -9,10 +9,10 @@ A pure-Python library for security teams that need ranked, redacted answers to G
 ```bash
 git clone <repo-url>
 cd secureCM
-python examples/what_changed_yesterday.py          # examples add runtime/ to the path themselves
-python examples/seven_day_exposure.py
-PYTHONPATH=runtime python -m unittest discover -s tests
-PYTHONPATH=runtime python -m attack_coverage.report
+python dev/examples/what_changed_yesterday.py      # examples add runtime/ to the path themselves
+python dev/examples/seven_day_exposure.py
+PYTHONPATH=runtime python -m unittest discover -s dev/tests
+PYTHONPATH=runtime python dev/report.py
 ```
 
 No dependencies beyond the Python standard library. No install step needed. The runtime code lives in `runtime/` (see *Minimal runtime bundle* below); tests, examples, fixtures, and docs sit at the repo root outside it.
@@ -154,7 +154,7 @@ Load → prioritize → format → redact in one call. Returns `{"summary": str,
 ### `what_changed_yesterday.py`
 
 ```bash
-python examples/what_changed_yesterday.py
+python dev/examples/what_changed_yesterday.py
 ```
 
 Calls `analyze()` on the synthetic fixture for the 24-hour window ending 2026-10-31. Changes are derived via logs-primary: the 6 log entries in the window produce 6 `Change` records (CREATE+UPDATE for `prod-allow-tcp-8080`, CREATE+DELETE for `prod-deny-all-egress`, IAM `SetIamPolicy` is outside the 24h window, plus two description-only changes by alice). Two of those are risky.
@@ -213,7 +213,7 @@ No raw service-account emails appear. The principal `terraform-deployer@…` is 
 ### `seven_day_exposure.py`
 
 ```bash
-python examples/seven_day_exposure.py
+python dev/examples/seven_day_exposure.py
 ```
 
 Multi-step pipeline over a 7-day window. Expected output shape:
@@ -259,7 +259,7 @@ Multi-step pipeline over a 7-day window. Expected output shape:
 
 ```python
 # 1. fetch or load  (broker returns native GCP JSON verbatim — no normalization)
-with open("fixtures/synthetic.json") as f:
+with open("dev/fixtures/synthetic.json") as f:
     data = json.load(f)
 # or: data = fetch_all(broker_url, "projects/my-project")
 # fetch_all fetches log_entries, iam_policies, vpc_firewall_rules, network_firewall_policies
@@ -493,7 +493,7 @@ runtime/
   codemode/              # MCP server + executor
 ```
 
-Left at the repo root, outside `runtime/` and **not** needed to run: `docs/`, `tests/`, `examples/`, `fixtures/`. Nothing in `runtime/` imports `examples/` or `fixtures/`; in production the data arrives from the broker/export. (`fixtures/` is used only by the test suite and `attack_coverage/report.py`, the CI/coverage gate — which is inside `runtime/attack_coverage/` but never invoked at analysis time.)
+Everything else lives in `dev/` — examples, fixtures, tests, docs, and the CI coverage gate (`dev/report.py`). None of it is needed to run the MCP server; in production data arrives from the broker. The `dev/` folder is for understanding, testing, and contributing to the library.
 
 **Starting the process** — put `runtime/` wherever your sandbox mounts it, add that path to `PYTHONPATH`, and run the MCP server (stdio JSON-RPC):
 
@@ -542,14 +542,17 @@ Custom redactors run after the built-ins inside every `redact_sensitive` call, i
 The `attack_coverage` package ships a catalog of GCP-relevant MITRE ATT&CK techniques and a coverage report that maps each technique to the detectors that fire on it.
 
 ```bash
-PYTHONPATH=runtime python -m attack_coverage.report
+PYTHONPATH=runtime python dev/report.py
 ```
 
 Prints a text matrix showing per-tactic coverage. To get the report programmatically:
 
 ```python
-from attack_coverage.report import build_report
-report = build_report()  # returns dict with keys: by_tactic, coverage, regressions, dangling, not_covered
+import sys; sys.path.insert(0, "runtime")
+import importlib.util, pathlib
+_spec = importlib.util.spec_from_file_location("report", "dev/report.py")
+_mod = importlib.util.module_from_spec(_spec); _spec.loader.exec_module(_mod)
+report = _mod.build_report()  # keys: by_tactic, coverage, regressions, dangling, not_covered
 ```
 
 The underlying technique catalog is in `attack_coverage/attack_catalog.json`.

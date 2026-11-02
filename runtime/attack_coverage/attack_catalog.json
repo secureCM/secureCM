@@ -7,7 +7,7 @@
       "tactic": "persistence",
       "status": "partial",
       "detector": "detect_privilege_grant",
-      "fixture": "fixtures/incidents/account_manipulation.json",
+      "fixture": "dev/fixtures/incidents/account_manipulation.json",
       "verified": false,
       "reason": null
     },
@@ -17,7 +17,7 @@
       "tactic": "persistence",
       "status": "partial",
       "detector": "enrich_with_enablers",
-      "fixture": "fixtures/incidents/sa_key_enabler.json",
+      "fixture": "dev/fixtures/incidents/sa_key_enabler.json",
       "verified": null,
       "reason": null
     },
@@ -27,7 +27,7 @@
       "tactic": "persistence",
       "status": "covered",
       "detector": "detect_privilege_grant",
-      "fixture": "fixtures/incidents/additional_cloud_roles.json",
+      "fixture": "dev/fixtures/incidents/additional_cloud_roles.json",
       "verified": false,
       "reason": null
     },
@@ -37,7 +37,7 @@
       "tactic": "initial-access",
       "status": "partial",
       "detector": "detect_privilege_grant",
-      "fixture": "fixtures/incidents/trusted_relationship.json",
+      "fixture": "dev/fixtures/incidents/trusted_relationship.json",
       "verified": false,
       "reason": null
     },
@@ -87,7 +87,7 @@
       "tactic": "defense-evasion",
       "status": "partial",
       "detector": "detect_firewall_exposure",
-      "fixture": "fixtures/incidents/impair_defenses.json",
+      "fixture": "dev/fixtures/incidents/impair_defenses.json",
       "verified": false,
       "reason": null
     },
@@ -97,7 +97,7 @@
       "tactic": "defense-evasion",
       "status": "covered",
       "detector": "detect_firewall_exposure",
-      "fixture": "fixtures/incidents/disable_cloud_firewall.json",
+      "fixture": "dev/fixtures/incidents/disable_cloud_firewall.json",
       "verified": false,
       "reason": null
     },
@@ -117,7 +117,7 @@
       "tactic": "impact",
       "status": "partial",
       "detector": "detect_firewall_exposure",
-      "fixture": "fixtures/incidents/data_destruction.json",
+      "fixture": "dev/fixtures/incidents/data_destruction.json",
       "verified": false,
       "reason": null
     },
@@ -177,7 +177,7 @@
       "tactic": "discovery",
       "status": "partial",
       "detector": "detect_discovery_bursts",
-      "fixture": "fixtures/incidents/cloud_infra_discovery.json",
+      "fixture": "dev/fixtures/incidents/cloud_infra_discovery.json",
       "verified": false,
       "reason": null
     },
@@ -187,7 +187,7 @@
       "tactic": "discovery",
       "status": "partial",
       "detector": "detect_discovery_bursts",
-      "fixture": "fixtures/incidents/cloud_groups_discovery.json",
+      "fixture": "dev/fixtures/incidents/cloud_groups_discovery.json",
       "verified": false,
       "reason": null
     },
@@ -197,7 +197,7 @@
       "tactic": "defense-evasion",
       "status": "partial",
       "detector": "detect_anomalous_actor",
-      "fixture": "fixtures/incidents/cloud_accounts.json",
+      "fixture": "dev/fixtures/incidents/cloud_accounts.json",
       "verified": false,
       "reason": null
     },

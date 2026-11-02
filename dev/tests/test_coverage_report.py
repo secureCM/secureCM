@@ -2,10 +2,11 @@
 import copy
 import json
 import pathlib
+import sys
 import unittest
 
-REPO = pathlib.Path(__file__).resolve().parent.parent
-INCIDENTS = REPO / "fixtures" / "incidents"
+REPO = pathlib.Path(__file__).resolve().parent.parent.parent
+INCIDENTS = REPO / "dev" / "fixtures" / "incidents"
 
 
 class TestNativeFixtureMigration(unittest.TestCase):
@@ -13,7 +14,7 @@ class TestNativeFixtureMigration(unittest.TestCase):
 
     def test_coverage_report_no_regressions_on_native(self):
         """build_report() regressions == [] and not_covered == [] on native fixtures."""
-        from attack_coverage.report import build_report
+        import importlib.util as _ilu; _spec = _ilu.spec_from_file_location('dev_report', str(pathlib.Path(__file__).resolve().parent.parent / 'report.py')); _mod = _ilu.module_from_spec(_spec); _spec.loader.exec_module(_mod); build_report = _mod.build_report
         r = build_report()
         self.assertEqual(r["regressions"], [],
                          f"Regressions on native fixtures: {r['regressions']}")
@@ -61,7 +62,7 @@ class TestNativeFixtureMigration(unittest.TestCase):
 
 class TestCoverageReport(unittest.TestCase):
     def _build(self, catalog=None):
-        from attack_coverage.report import build_report
+        import importlib.util as _ilu; _spec = _ilu.spec_from_file_location('dev_report', str(pathlib.Path(__file__).resolve().parent.parent / 'report.py')); _mod = _ilu.module_from_spec(_spec); _spec.loader.exec_module(_mod); build_report = _mod.build_report
         return build_report(catalog)
 
     # ── metric ──────────────────────────────────────────────────────────────
@@ -72,7 +73,7 @@ class TestCoverageReport(unittest.TestCase):
             "techniques": [
                 {"id": "T1001", "name": "A", "tactic": "t", "status": "covered",
                  "detector": "detect_privilege_grant",
-                 "fixture": "fixtures/incidents/account_manipulation.json", "reason": None},
+                 "fixture": "dev/fixtures/incidents/account_manipulation.json", "reason": None},
                 {"id": "T1002", "name": "B", "tactic": "t", "status": "not-covered",
                  "detector": None, "fixture": None, "reason": None},
                 {"id": "T1003", "name": "C", "tactic": "t", "status": "out-of-scope",
@@ -106,7 +107,7 @@ class TestCoverageReport(unittest.TestCase):
         # inject a bad fixture into the first covered/partial entry
         for t in catalog["techniques"]:
             if t.get("status") in ("covered", "partial"):
-                t["fixture"] = "fixtures/incidents/nope.json"
+                t["fixture"] = "dev/fixtures/incidents/nope.json"
                 break
         r = self._build(catalog)
         self.assertTrue(len(r["dangling"]) > 0)
@@ -127,7 +128,7 @@ class TestCoverageReport(unittest.TestCase):
                     "status": "partial",
                     "detector": "detect_privilege_grant",
                     # account_manipulation.json fires T1098 findings, not T1999.001
-                    "fixture": "fixtures/incidents/account_manipulation.json",
+                    "fixture": "dev/fixtures/incidents/account_manipulation.json",
                     "verified": False,
                     "reason": None,
                 }
@@ -148,7 +149,7 @@ class TestCoverageReport(unittest.TestCase):
                     "tactic": "persistence",
                     "status": "partial",
                     "detector": "enrich_with_enablers",
-                    "fixture": "fixtures/incidents/sa_key_enabler.json",
+                    "fixture": "dev/fixtures/incidents/sa_key_enabler.json",
                     "verified": None,
                     "reason": None,
                 }
