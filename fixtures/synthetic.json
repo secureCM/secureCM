@@ -28,12 +28,25 @@
       "network": "projects/example-prod-project/global/networks/prod-network",
       "direction": "INGRESS",
       "priority": 1000,
-      "sourceRanges": ["0.0.0.0/0"],
-      "allowed": [{"IPProtocol": "tcp", "ports": ["8080"]}],
+      "sourceRanges": [
+        "0.0.0.0/0"
+      ],
+      "allowed": [
+        {
+          "IPProtocol": "tcp",
+          "ports": [
+            "8080"
+          ]
+        }
+      ],
       "denied": [],
       "disabled": false,
-      "logConfig": {"enable": false},
-      "labels": {"env": "prod"}
+      "logConfig": {
+        "enable": false
+      },
+      "labels": {
+        "env": "prod"
+      }
     },
     {
       "kind": "compute#firewall",
@@ -43,10 +56,18 @@
       "priority": 65534,
       "sourceRanges": [],
       "allowed": [],
-      "denied": [{"IPProtocol": "all"}],
+      "denied": [
+        {
+          "IPProtocol": "all"
+        }
+      ],
       "disabled": false,
-      "logConfig": {"enable": true},
-      "labels": {"env": "prod"}
+      "logConfig": {
+        "enable": true
+      },
+      "labels": {
+        "env": "prod"
+      }
     }
   ],
   "network_firewall_policies": [
@@ -59,7 +80,9 @@
           "direction": "INGRESS",
           "action": "allow",
           "match": {
-            "srcIpRanges": ["10.0.0.0/8"]
+            "srcIpRanges": [
+              "10.0.0.0/8"
+            ]
           }
         }
       ]
@@ -73,12 +96,25 @@
         "authenticationInfo": {
           "principalEmail": "terraform-deployer@example-prod-project.iam.gserviceaccount.com"
         },
-        "requestMetadata": {"callerIp": "203.0.113.10"},
+        "requestMetadata": {
+          "callerIp": "203.0.113.10"
+        },
         "serviceData": {},
         "request": {
-          "sourceRanges": ["10.0.0.0/8"],
-          "allowed": [{"IPProtocol": "tcp", "ports": ["8080"]}],
-          "labels": {"env": "prod"}
+          "sourceRanges": [
+            "10.0.0.0/8"
+          ],
+          "allowed": [
+            {
+              "IPProtocol": "tcp",
+              "ports": [
+                "8080"
+              ]
+            }
+          ],
+          "labels": {
+            "env": "prod"
+          }
         }
       },
       "timestamp": "2026-10-30T16:22:40Z"
@@ -90,12 +126,25 @@
         "authenticationInfo": {
           "principalEmail": "terraform-deployer@example-prod-project.iam.gserviceaccount.com"
         },
-        "requestMetadata": {"callerIp": "203.0.113.10"},
+        "requestMetadata": {
+          "callerIp": "203.0.113.10"
+        },
         "serviceData": {},
         "request": {
-          "sourceRanges": ["0.0.0.0/0"],
-          "allowed": [{"IPProtocol": "tcp", "ports": ["8080"]}],
-          "labels": {"env": "prod"}
+          "sourceRanges": [
+            "0.0.0.0/0"
+          ],
+          "allowed": [
+            {
+              "IPProtocol": "tcp",
+              "ports": [
+                "8080"
+              ]
+            }
+          ],
+          "labels": {
+            "env": "prod"
+          }
         }
       },
       "timestamp": "2026-10-30T16:22:41Z"
@@ -107,12 +156,20 @@
         "authenticationInfo": {
           "principalEmail": "terraform-deployer@example-prod-project.iam.gserviceaccount.com"
         },
-        "requestMetadata": {"callerIp": "203.0.113.10"},
+        "requestMetadata": {
+          "callerIp": "203.0.113.10"
+        },
         "serviceData": {},
         "request": {
           "direction": "EGRESS",
-          "denied": [{"IPProtocol": "all"}],
-          "labels": {"env": "prod"}
+          "denied": [
+            {
+              "IPProtocol": "all"
+            }
+          ],
+          "labels": {
+            "env": "prod"
+          }
         }
       },
       "timestamp": "2026-10-30T16:23:04Z"
@@ -124,7 +181,9 @@
         "authenticationInfo": {
           "principalEmail": "terraform-deployer@example-prod-project.iam.gserviceaccount.com"
         },
-        "requestMetadata": {"callerIp": "203.0.113.10"},
+        "requestMetadata": {
+          "callerIp": "203.0.113.10"
+        },
         "serviceData": {},
         "request": {}
       },
@@ -137,7 +196,9 @@
         "authenticationInfo": {
           "principalEmail": "terraform-deployer@example-prod-project.iam.gserviceaccount.com"
         },
-        "requestMetadata": {"callerIp": "203.0.113.10"},
+        "requestMetadata": {
+          "callerIp": "203.0.113.10"
+        },
         "serviceData": {
           "policyDelta": {
             "bindingDeltas": [
@@ -160,7 +221,9 @@
         "authenticationInfo": {
           "principalEmail": "alice@example.com"
         },
-        "requestMetadata": {"callerIp": "10.0.0.1"},
+        "requestMetadata": {
+          "callerIp": "10.0.0.1"
+        },
         "serviceData": {},
         "request": {
           "description": ""
@@ -175,7 +238,9 @@
         "authenticationInfo": {
           "principalEmail": "alice@example.com"
         },
-        "requestMetadata": {"callerIp": "10.0.0.1"},
+        "requestMetadata": {
+          "callerIp": "10.0.0.1"
+        },
         "serviceData": {},
         "request": {
           "description": "Updated description only"
@@ -190,29 +255,112 @@
         "authenticationInfo": {
           "principalEmail": "alice@example.com"
         },
-        "requestMetadata": {"callerIp": "10.0.0.1"},
+        "requestMetadata": {
+          "callerIp": "10.0.0.1"
+        },
         "serviceData": {},
         "request": {
           "priority": 1000
         }
       },
       "timestamp": "2026-10-21T08:00:00Z"
+    },
+    {
+      "protoPayload": {
+        "methodName": "SetIamPolicy",
+        "resourceName": "projects/example-staging-project",
+        "authenticationInfo": {
+          "principalEmail": "alice@example.com"
+        },
+        "requestMetadata": {
+          "callerIp": "203.0.113.10"
+        },
+        "serviceData": {
+          "policyDelta": {
+            "bindingDeltas": [
+              {
+                "action": "ADD",
+                "role": "roles/viewer",
+                "member": "user:attacker@external.com"
+              }
+            ]
+          }
+        },
+        "request": {}
+      },
+      "timestamp": "2026-10-27T09:10:00Z"
     }
   ],
   "resources": [
-    {"name": "instance-001", "network": "prod-network", "project": "example-prod-project"},
-    {"name": "instance-002", "network": "prod-network", "project": "example-prod-project"},
-    {"name": "instance-003", "network": "prod-network", "project": "example-prod-project"},
-    {"name": "instance-004", "network": "prod-network", "project": "example-prod-project"},
-    {"name": "instance-005", "network": "prod-network", "project": "example-prod-project"},
-    {"name": "instance-006", "network": "prod-network", "project": "example-prod-project"},
-    {"name": "instance-007", "network": "prod-network", "project": "example-prod-project"},
-    {"name": "subnet-001", "network": "prod-network", "project": "example-prod-project"},
-    {"name": "subnet-002", "network": "prod-network", "project": "example-prod-project"},
-    {"name": "subnet-003", "network": "prod-network", "project": "example-prod-project"},
-    {"name": "subnet-004", "network": "prod-network", "project": "example-prod-project"},
-    {"name": "subnet-005", "network": "prod-network", "project": "example-prod-project"},
-    {"name": "subnet-006", "network": "prod-network", "project": "example-prod-project"},
-    {"name": "subnet-007", "network": "prod-network", "project": "example-prod-project"}
+    {
+      "name": "instance-001",
+      "network": "prod-network",
+      "project": "example-prod-project"
+    },
+    {
+      "name": "instance-002",
+      "network": "prod-network",
+      "project": "example-prod-project"
+    },
+    {
+      "name": "instance-003",
+      "network": "prod-network",
+      "project": "example-prod-project"
+    },
+    {
+      "name": "instance-004",
+      "network": "prod-network",
+      "project": "example-prod-project"
+    },
+    {
+      "name": "instance-005",
+      "network": "prod-network",
+      "project": "example-prod-project"
+    },
+    {
+      "name": "instance-006",
+      "network": "prod-network",
+      "project": "example-prod-project"
+    },
+    {
+      "name": "instance-007",
+      "network": "prod-network",
+      "project": "example-prod-project"
+    },
+    {
+      "name": "subnet-001",
+      "network": "prod-network",
+      "project": "example-prod-project"
+    },
+    {
+      "name": "subnet-002",
+      "network": "prod-network",
+      "project": "example-prod-project"
+    },
+    {
+      "name": "subnet-003",
+      "network": "prod-network",
+      "project": "example-prod-project"
+    },
+    {
+      "name": "subnet-004",
+      "network": "prod-network",
+      "project": "example-prod-project"
+    },
+    {
+      "name": "subnet-005",
+      "network": "prod-network",
+      "project": "example-prod-project"
+    },
+    {
+      "name": "subnet-006",
+      "network": "prod-network",
+      "project": "example-prod-project"
+    },
+    {
+      "name": "subnet-007",
+      "network": "prod-network",
+      "project": "example-prod-project"
+    }
   ]
 }

@@ -4,6 +4,10 @@ from __future__ import annotations
 from datetime import datetime
 
 from gcp_policy_analyzer.loaders import (
+    IamBinding,
+    IamPolicy,
+    VpcFirewallRule,
+    NetworkFirewallPolicy,
     load_iam_policies,
     load_vpc_firewall_rules,
     load_network_firewall_policies,
@@ -40,6 +44,11 @@ __all__ = [
     "fetch_export",
     "fetch_all",
     "BrokerError",
+    # input dataclasses — needed to construct or inspect objects returned by loaders
+    "IamBinding",
+    "IamPolicy",
+    "VpcFirewallRule",
+    "NetworkFirewallPolicy",
     "load_iam_policies",
     "load_vpc_firewall_rules",
     "load_network_firewall_policies",
