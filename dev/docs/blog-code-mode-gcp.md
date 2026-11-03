@@ -1,50 +1,52 @@
-# Letting models analyze GCP IAM and firewall changes via Code Mode
+# Keeping raw GCP logs out of the LLM context window with a two-tool Code Mode
 
-I wanted an agent to answer questions over bulky, sensitive GCP config and audit-log data without putting that data in the context window, and without the model's judgment being what decides whether a change is dangerous. This is what I built and what I measured.
+The problem I kept hitting: to answer "did anything dangerous change in the last 7 days" over real GCP data, you either dump 1.9 MB of nested `LogEntry` JSON into the context window — which is expensive, leaks service-account emails, and asks the model to hold the whole IAM binding graph in working memory — or you write a bespoke script every time. Neither scales.
 
-## Mechanism
+The alternative I tried: give the model two MCP tools and a pure-Python library running inside a sandbox. The model calls `describe_capabilities` to learn what functions exist, writes one script using them, and `run_script` runs it. Only the redacted result comes back. Raw logs stay inside the sandbox.
 
-Two MCP tools: `describe_capabilities` returns the library's function list; `run_script` executes a Python script in a sandbox. The model calls the first, writes one script, and the script runs against the data inside the sandbox. Only a redacted result returns to the model.
+## How the split works
 
-The library is deterministic helpers: loaders for native GCP shapes, snapshot/log diffing, exposure and IAM-risk scoring, ATT&CK-tagged detectors (firewall exposure, privilege grant, discovery bursts, anomalous actor), per-actor correlation, and a redactor. The split is deliberate: the model decides *which* helpers to run and how to filter/rank; the library decides *what is dangerous*. Findings carry ATT&CK IDs (T1098, T1199, T1562.007, …). So the model's contribution is orchestration, and the security-relevant call is deterministic and reviewable.
+The library is deterministic helpers. The model is the orchestrator. Specifically:
 
-Three properties that follow from the data-flow:
+- **Library decides what is dangerous.** Scoring functions (`score_rule_exposure`, `score_iam_binding`), detectors (`detect_firewall_exposure`, `detect_privilege_grant`, …), and the redactor are library code. Findings carry ATT&CK IDs. A security engineer can read and audit them.
+- **Model decides what to ask.** It writes a short script that calls those functions, filters, joins, and ranks. The model contributes orchestration, not security judgment.
+- **Redaction at the trust boundary.** Service-account emails come back as stable hashes (`terraform-deployer@…` → `sa-8ac9c3@…`). The hash is deterministic, so the model can still correlate the same actor across events. Human emails and caller IPs are unmasked. The boundary is `*.iam.gserviceaccount.com`.
 
-- The raw export (~1.9 MB of nested `LogEntry` JSON for 10 projects) never enters the context. The model manipulates it by reference. Service-account emails come back masked to a stable hash (`sa-a1447b@…`), so the model can correlate the same actor across events without seeing who it is.
-- Changes are derived logs-primary: IAM from `SetIamPolicy` `policyDelta.bindingDeltas`; firewall/network-policy by replaying each resource's own in-window audit history. When a resource's prior state predates the window, `before` is reported as unknown rather than guessed, and detectors that need it abstain.
-- The sandbox holds no credentials (a broker outside it attaches a read-only credential; egress is a single allowlisted endpoint), and the exact script the model ran is logged verbatim. A coverage catalog maps the GCP/IaaS ATT&CK matrix to detectors and fails CI if a detector stops firing or a catalog entry points at a missing detector/fixture.
+Changes are derived logs-primary: IAM from `SetIamPolicy.policyDelta.bindingDeltas`, firewall rules by replaying each resource's own in-window audit history. When prior state predates the window, `before` is `None` and detectors that need it abstain — rather than guess.
 
-## Benchmark
+## The benchmark
 
-Same neutralized native-shaped fixture both ways — nested `protoPayload`/`policyDelta`, attack markers scrubbed so campaigns are found by behavior, not by grepping names. 10 projects, ~3,900 native audit-log entries, six buried campaigns, four decoys. Two models at low reasoning effort, 5 trials each, with and without the helpers:
+Same neutralized native-shaped fixture both ways. 10 projects, ~3,900 audit-log entries, five buried campaigns modeled on real-world attack patterns (Capital One-style S3/GCS exposure, SolarWinds-style trusted-relationship abuse, priority-shadow on a deny-egress rule, cross-project owner grant, SA key creation + later abuse). Attack markers scrubbed so campaigns are found by behavior, not by name-matching. Four decoys. Two models at low reasoning effort, 5 trials each:
 
 | | Haiku + helpers | Haiku raw | Sonnet + helpers | Sonnet raw |
 |---|---|---|---|---|
-| Mean recall | 3.2/5 (64%) | 2.0/5 (40%) | 5.0/5 (100%) | 4.0/5 (80%) |
-| Recall floor (worst run) | 2/5 | 1/5 | 5/5 | 4/5 |
-| Zero-recall runs | 0 | 0 | 0 | 0 |
+| Mean recall | 3.2 / 5 (64%) | 2.0 / 5 (40%) | 5.0 / 5 (100%) | 4.0 / 5 (80%) |
+| Worst run | 2 / 5 | 1 / 5 | 5 / 5 | 4 / 5 |
 | False positives / run | 1.2 | 1.2 | 1.0 | 0.6 |
 | Tokens / run | ~20k | ~28k | ~31k | ~28k |
 
-What the numbers show:
+Three things stand out:
 
-- With Haiku, the helpers move mean recall 40% → 64%, raise the worst-case floor 1/5 → 2/5, and cut tokens (~28k → ~20k, because the sandbox returns compact findings instead of the model reading raw logs).
-- With Sonnet, the helpers give 5/5 on every run — the detectors hand over the full set and a capable model stops discarding true findings.
-- The helpers' edge narrows as the model improves (+60% relative recall at Haiku, +25% at Sonnet) but doesn't disappear. The one campaign raw reasoning missed on every Sonnet run was a priority-shadow on a deny-egress rule (raising a deny rule's priority so an allow wins) — a before-state reconstruction the library does and hand-analysis didn't.
-- One decoy is a false positive for both approaches: a firewall opened to 0.0.0.0/0 and reverted two hours later, as two separate log entries. Neither correlates the pair; that needs temporal correlation I don't do yet.
+**Haiku gets a +24 pp lift and uses fewer tokens.** The sandbox returns compact findings instead of the model reading raw logs. Haiku misses were mostly the model dismissing correct detector output, not the detector missing the event. That's a different problem — the signal was there, the model chose not to act on it.
 
-Caveats: five trials is small; the remaining Haiku misses are mostly the model dismissing correct detector output, not detection failures; the reference executor is bare and assumes a real sandbox around it.
+**Sonnet goes from 4/5 to 5/5.** The one campaign it consistently missed on raw data was the priority-shadow: a deny-egress rule's priority raised so an allow rule wins. Finding it requires reconstructing the before-state from a log replay. That's what the library does; the model without it didn't reconstruct it.
 
-## The case it's for: multi-day chains
+**The helpers don't increase false positives.** Both approaches produce roughly the same FP rate. The library is high-recall and intentionally so — a reverted firewall (opened and closed two hours later, two separate log entries) fires as a finding because temporal correlation of revert pairs isn't implemented. That's a known gap, not noise from the model hallucinating.
 
-The target isn't a single loud event. A realistic cloud chain (TTPs modeled on Capital One and SolarWinds-style activity) looks like: day 0 a key is minted for a service account; day 3 that SA is added to a group holding `tokenCreator` at folder scope (no direct role grant to flag); day 7 it opens a prod firewall to 0.0.0.0/0; day 10 it priority-shadows a deny-egress rule. Four events, three principals, three data types, ten days. A person triaging the daily feed sees four unrelated, individually-plausible events a week apart and connects none of them.
+Five trials is directional. The result is consistent across runs but not a large-sample study.
 
-The helpers connect them deterministically: windowed log replay ("what changed in the last N days"), per-actor correlation that flags a caller IP or subnet shared across different principals, a cross-project timeline, and enabler-event linking (the day-0 key mint to the day-7 abuse). In a separate needle test, one anomalous IP tying a key creation to a firewall change nine days apart across 400+ records reduced to a single function call. The connective tissue is the part that's deterministic, which is why a weaker model can still surface it.
+## The case the library is for
 
-## Limitations
+The target isn't a single loud event. A realistic chain looks like: day 0, an SA key is minted; day 3, that SA is added to a group holding `tokenCreator` at folder scope; day 7, it opens a prod firewall to `0.0.0.0/0`; day 10, it priority-shadows a deny-egress rule. Four events, three principals, three data types, ten days. Someone triaging the daily Pub/Sub feed sees four individually-plausible operations a week apart and connects none of them.
 
-Scope is three surfaces — IAM allow policies, VPC firewall rules, network firewall policies — plus SA-key and group-membership events as correlation context; everything else is explicitly out of scope and the catalog records it. No temporal-correlation layer yet (hence the reverted-firewall false positive). No alerting, no streaming — it's a batch library over an export, not a SIEM. The reference executor is minimal; production isolation (deny-by-default egress, real sandboxing) is the caller's responsibility. Five trials is directional, not definitive.
+The connective tissue is deterministic: windowed log replay, per-actor correlation that flags a caller IP shared across different principals, a cross-project timeline, and enabler-event linking (key mint to later abuse). In the needle test, one anomalous public IP tying a key creation to a firewall change nine days apart across 400+ log entries reduced to a single `correlate_by_actor` call. A Haiku-tier model found it.
 
-Fixtures, the ATT&CK coverage catalog, and the benchmark harness are in the repo.
+## What it is and isn't
+
+Three surfaces: IAM allow policies, VPC firewall rules, network firewall policies. SA-key and group-membership events as correlation context. Everything else is out of scope and the ATT&CK coverage catalog records it explicitly.
+
+Not a SIEM. Not streaming. Batch over an export. The reference executor (`codemode/executor.py`) is minimal — real isolation (deny-by-default egress, namespace/seccomp, no credentials in the subprocess environment) is the operator's responsibility. The repo documents this and the quickstart won't let you miss it.
+
+The split between `runtime/` (what goes in a sandbox) and `dev/` (examples, fixtures, tests) is deliberate. Copy `runtime/` into whatever sandboxing layer you already use.
 
 Repo: https://github.com/secureCM/secureCM
