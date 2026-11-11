@@ -19,13 +19,13 @@ class TestMcpServer(unittest.TestCase):
         notif = self.handle({"jsonrpc": "2.0", "method": "notifications/initialized"})
         self.assertIsNone(notif)
 
-        # tools/list — must have exactly describe_capabilities and run_script
+        # tools/list — must include the three registered tools
         resp2 = self.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
         tools = resp2["result"]["tools"]
         names = {t["name"] for t in tools}
         self.assertIn("describe_capabilities", names)
         self.assertIn("run_script", names)
-        self.assertEqual(len(names), 2)
+        self.assertIn("run_analysis", names)
 
     def test_describe_capabilities_lists_api(self):
         resp = self.handle({

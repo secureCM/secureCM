@@ -1,14 +1,16 @@
 """MCP stdio server for GCP Policy Analyzer codemode.
 
-Exposes two tools:
+Exposes three tools:
   describe_capabilities — walks gcp_policy_analyzer.__all__ and returns API summary
   run_script            — executes Python code via codemode.executor.run_script
+  run_analysis          — Laya triage + RDM routing + targeted sandbox run (low-token path)
 """
 from __future__ import annotations
 
 import inspect
 import json
 import sys
+from datetime import datetime, timezone
 
 import gcp_policy_analyzer
 from codemode import run_script
@@ -112,6 +114,33 @@ _TOOLS = [
             "required": ["code"],
         },
     },
+    {
+        "name": "run_analysis",
+        "description": (
+            "Low-token analysis path: Laya triage filters changes (zero LLM tokens), "
+            "RDM routing selects which detectors to run (Laya choices, ~33ms each), "
+            "then targeted scripts execute in the sandbox. "
+            "Use this instead of run_script when you want findings without writing orchestration code."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "data_path": {
+                    "type": "string",
+                    "description": "Absolute path to the GCP export JSON file inside the sandbox.",
+                },
+                "window_days": {
+                    "type": "integer",
+                    "description": "Lookback window in days from now (default 7).",
+                },
+                "triage_threshold": {
+                    "type": "number",
+                    "description": "Laya risk probability threshold for keeping a change (default 0.5).",
+                },
+            },
+            "required": ["data_path"],
+        },
+    },
 ]
 
 
@@ -160,9 +189,63 @@ def _call_tool(name: str, args: dict) -> dict:
             text = result.stdout
         # Redact stdout/stderr before returning — trust boundary
         text = gcp_policy_analyzer.redact_sensitive(text)
+    elif name == "run_analysis":
+        text = _run_analysis(args)
     else:
         return {"error": {"code": -32602, "message": f"Unknown tool: {name}"}}
     return {"content": [{"type": "text", "text": text}]}
+
+
+def _run_analysis(args: dict) -> str:
+    """Laya triage + RDM routing + targeted sandbox run."""
+    from codemode.laya_triage import triage_changes, surface_counts, _LAYA_AVAILABLE
+    from codemode.rdm_router import route_and_run
+
+    data_path = args["data_path"]
+    window_days = int(args.get("window_days", 7))
+    threshold = float(args.get("triage_threshold", 0.5))
+    anchor = datetime.now(timezone.utc)
+
+    # Load changes in broker process for triage (not the sandbox)
+    try:
+        import json as _json
+        from gcp_policy_analyzer import load_audit_changes
+        from datetime import timedelta
+        with open(data_path) as f:
+            data = _json.load(f)
+        start = anchor - timedelta(days=window_days)
+        all_changes = load_audit_changes(data, start=start, end=anchor)
+    except Exception as exc:
+        return f"[run_analysis] Failed to load data: {exc}"
+
+    # Laya triage: filter to risky changes + get surface routing
+    risky, triage_results = triage_changes(all_changes, threshold=threshold)
+    counts = surface_counts(triage_results) if triage_results else {
+        "iam": sum(1 for c in all_changes if c.resource_type == "iam_policy"),
+        "firewall": sum(1 for c in all_changes if c.resource_type == "firewall_rule"),
+        "nfp": sum(1 for c in all_changes if c.resource_type == "network_firewall_policy"),
+    }
+
+    triage_note = (
+        f"Laya triage: {len(risky)}/{len(all_changes)} changes flagged as risky. "
+        if _LAYA_AVAILABLE else
+        f"Laya not installed — processing all {len(all_changes)} changes. "
+    )
+
+    # RDM routing loop: Laya decides detectors, targeted scripts run in sandbox
+    findings = route_and_run(
+        surface_counts=counts,
+        run_script_fn=run_script,
+        data_path=data_path,
+        anchor_date=anchor,
+        window_days=window_days,
+    )
+
+    result_text = triage_note + f"{len(findings)} finding(s).\n"
+    if findings:
+        result_text += _json.dumps(findings, indent=2, default=str)
+
+    return gcp_policy_analyzer.redact_sensitive(result_text)
 
 
 def handle_request(req: dict) -> dict | None:
