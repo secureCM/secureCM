@@ -137,6 +137,10 @@ _TOOLS = [
                     "type": "number",
                     "description": "Laya risk probability threshold for keeping a change (default 0.5).",
                 },
+                "anchor_date": {
+                    "type": "string",
+                    "description": "ISO-8601 UTC date for the analysis window end, e.g. '2026-10-31'. Defaults to now.",
+                },
             },
             "required": ["data_path"],
         },
@@ -201,10 +205,14 @@ def _run_analysis(args: dict) -> str:
     from codemode.laya_triage import triage_changes, surface_counts, _LAYA_AVAILABLE
     from codemode.rdm_router import route_and_run
 
-    data_path = args["data_path"]
+    import os as _os
+    data_path = _os.path.abspath(args["data_path"])
     window_days = int(args.get("window_days", 7))
     threshold = float(args.get("triage_threshold", 0.5))
-    anchor = datetime.now(timezone.utc)
+    if args.get("anchor_date"):
+        anchor = datetime.fromisoformat(args["anchor_date"]).replace(tzinfo=timezone.utc)
+    else:
+        anchor = datetime.now(timezone.utc)
 
     # Load changes in broker process for triage (not the sandbox)
     try:
